@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: ssle
+  labels: {app: registry}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # estado em memória: uma só instância
+  selector:
+    matchLabels: {app: registry}
+  template:
+    metadata:
+      labels: {app: registry}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: registry
+          image: ssle/registry:v1
+          imagePullPolicy: Never          # imagem importada localmente nos nós
+          ports:
+            - containerPort: 5050
+          env:
+            # Downward API: o pod descobre o seu IP, nome e nó
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            - {name: PORT, value: "5050"}
+            - {name: REGISTRY_URL, value: "http://registry:5050"}
+            - {name: SERVICE_URL, value: "http://$(POD_IP):5050"}   # cada réplica regista o seu IP
+            - {name: LOC_DC, value: "dc-incus"}
+            - {name: LOC_RACK, value: "k3s"}
+            - {name: LOC_NODE, value: "$(NODE_NAME)"}
+            - {name: INSTANCE, value: "$(POD_NAME)"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          readinessProbe:
+            httpGet: {path: /health, port: 5050}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 5050}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: ssle
+spec:
+  type: NodePort
+  selector: {app: registry}
+  ports:
+    - port: 5050
+      targetPort: 5050
+      nodePort: 30050

@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: storage-data
+  namespace: ssle
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storage
+  namespace: ssle
+  labels: {app: storage}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # SQLite + volume RWO: nunca 2 pods em simultâneo
+  selector:
+    matchLabels: {app: storage}
+  template:
+    metadata:
+      labels: {app: storage}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: storage
+          image: ssle/storage:v1
+          imagePullPolicy: Never          # imagem importada localmente nos nós
+          ports:
+            - containerPort: 5002
+          env:
+            # Downward API: o pod descobre o seu IP, nome e nó
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            - {name: PORT, value: "5002"}
+            - {name: REGISTRY_URL, value: "http://registry:5050"}
+            - {name: SERVICE_URL, value: "http://$(POD_IP):5002"}   # cada réplica regista o seu IP
+            - {name: LOC_DC, value: "dc-incus"}
+            - {name: LOC_RACK, value: "k3s"}
+            - {name: LOC_NODE, value: "$(NODE_NAME)"}
+            - {name: INSTANCE, value: "$(POD_NAME)"}
+            - {name: DB_PATH, value: /data/temp_data.db}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          readinessProbe:
+            httpGet: {path: /health, port: 5002}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 5002}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - {name: data, mountPath: /data}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: storage-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage
+  namespace: ssle
+spec:
+  type: ClusterIP
+  selector: {app: storage}
+  ports:
+    - port: 5002
+      targetPort: 5002

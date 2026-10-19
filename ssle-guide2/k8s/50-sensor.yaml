@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sensor
+  namespace: ssle
+  labels: {app: sensor}
+spec:
+  replicas: 1                  # aumenta para simular mais sensores
+  selector:
+    matchLabels: {app: sensor}
+  template:
+    metadata:
+      labels: {app: sensor}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: sensor
+          image: ssle/sensor:v1
+          imagePullPolicy: Never
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: REGISTRY_URL, value: "http://registry:5050"}
+            - {name: DEVICE_ID, value: "pt.centro.dc-incus.$(POD_NAME)"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}

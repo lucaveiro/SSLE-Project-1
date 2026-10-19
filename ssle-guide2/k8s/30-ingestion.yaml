@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion
+  namespace: ssle
+  labels: {app: ingestion}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: ingestion}
+  template:
+    metadata:
+      labels: {app: ingestion}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: ingestion
+          image: ssle/ingestion:v1
+          imagePullPolicy: Never          # imagem importada localmente nos nós
+          ports:
+            - containerPort: 5001
+          env:
+            # Downward API: o pod descobre o seu IP, nome e nó
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            - {name: PORT, value: "5001"}
+            - {name: REGISTRY_URL, value: "http://registry:5050"}
+            - {name: SERVICE_URL, value: "http://$(POD_IP):5001"}   # cada réplica regista o seu IP
+            - {name: LOC_DC, value: "dc-incus"}
+            - {name: LOC_RACK, value: "k3s"}
+            - {name: LOC_NODE, value: "$(NODE_NAME)"}
+            - {name: INSTANCE, value: "$(POD_NAME)"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          readinessProbe:
+            httpGet: {path: /health, port: 5001}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: 5001}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion
+  namespace: ssle
+spec:
+  type: NodePort
+  selector: {app: ingestion}
+  ports:
+    - port: 5001
+      targetPort: 5001
+      nodePort: 30001
