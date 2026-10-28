@@ -13,22 +13,72 @@ Evaluation of the solution's approaches and scalability · Conclusions
 
 ## 1. Introduction
 
-[TODO: objetivo do projeto — desenhar e correr uma arquitetura orientada a
-serviços que escale (slide 3); âmbito: deteção, monitorização e prevenção
-de ameaças (Projeto 1, vs. tolerância a ataques no Projeto 2); resumo de
-uma frase de cada secção seguinte]
+Sistemas distribuídos de larga escala assentam cada vez mais em
+arquiteturas orientadas a serviços (SOA), onde múltiplos componentes
+independentes comunicam através de um mecanismo de descoberta partilhado.
+Esta descentralização traz benefícios de escalabilidade e manutenibilidade,
+mas desloca também a superfície de ataque: comprometer o ponto de
+descoberta compromete, por transitividade, todos os serviços que nele
+confiam.
+
+Este relatório documenta o desenho, implementação e análise de segurança
+de uma arquitetura SOA de pequena escala — um pipeline de ingestão,
+armazenamento e análise de dados de sensores — construída sobre os Guiões
+1 e 2 da disciplina e empacotada num cluster Kubernetes (k3s) dentro de
+contentores Incus. O objetivo do Projeto 1 é duplo: (i) desenhar e correr
+uma arquitetura orientada a serviços capaz de escalar, com um esquema de
+identificação e localização hierárquico adequado a ambientes de larga
+escala; e (ii) analisar, explorar na prática e propor mitigação para três
+ameaças do syllabus da cadeira — route/signals hijacking, denial-of-service
+massivo, e botnets/fraude de dados — completando o ciclo exploração →
+deteção → resposta → post-mortem para cada uma.
+
+O relatório está organizado da seguinte forma: a Secção 2 enquadra os
+conceitos teóricos relevantes (SOA, FCAPS, monitorização de larga escala,
+SIEM e Attack-Defense Trees); a Secção 3 descreve a arquitetura de
+serviços implementada; a Secção 4 apresenta a metodologia de gestão de
+risco, incluindo a superfície de ataque e as três ADTrees construídas; a
+Secção 5 detalha, para cada uma das três ameaças escolhidas, a sua
+exploração prática (prova de conceito), deteção e resposta; a Secção 6
+avalia a escalabilidade da solução; e a Secção 7 fecha com as principais
+conclusões e limitações identificadas. Este é o Projeto 1 de um conjunto
+de dois: o foco aqui está na deteção e prevenção de ameaças, enquanto o
+Projeto 2, subsequente, reutilizará esta mesma arquitetura para abordar
+tolerância a ataques.
 
 ---
 
 ## 2. Relevant State of the Art
 
-[TODO: enquadramento teórico, referenciando o syllabus da cadeira — não é
-sobre o teu sistema, é sobre os conceitos usados]
+Esta secção enquadra os conceitos teóricos sobre os quais o restante
+relatório assenta: a arquitetura orientada a serviços como padrão de
+design, o modelo de gestão de falhas FCAPS e a sua lacuna face a eventos
+de segurança, as abordagens de monitorização de larga escala consideradas,
+e a metodologia de modelação de ameaças (Attack-Defense Trees) usada na
+Secção 4.
 
 ### 2.1 Service-Oriented Architecture / Microservices
 
-[TODO: definição SOA (Aula 2/Guia 1) — provider/consumer/broker/registry,
-loose coupling, discoverability]
+Uma arquitetura orientada a serviços (SOA) decompõe um sistema num
+conjunto de serviços independentes, fracamente acoplados (*loose
+coupling*), que comunicam através de contratos bem definidos em vez de
+partilharem estado ou memória. Os papéis clássicos de uma SOA — *provider*
+(quem presta o serviço), *consumer* (quem o consome) e *broker/registry*
+(o intermediário que permite a descoberta mútua, desacoplando consumidores
+de endereços fixos de providers) — são todos representados na arquitetura
+deste projeto: o Service Registry assume o papel de broker, enquanto os
+restantes quatro serviços alternam entre provider e consumer consoante a
+direção do fluxo de dados (por exemplo, o Storage é provider para o
+Ingestion e para o Analytics, mas consumer do Registry).
+
+A propriedade de *discoverability* — um serviço anunciar a sua presença e
+localização sem exigir configuração estática nos seus consumidores — é o
+que permite a uma SOA escalar horizontalmente (múltiplas réplicas de um
+mesmo serviço, descobertas de forma transparente) e geograficamente
+(serviços distribuídos por múltiplos nós ou regiões). Esta mesma
+propriedade é, como se discute na Secção 4 e 5.1, o ponto de maior
+concentração de risco do sistema: a descoberta depende inteiramente da
+integridade do broker.
 
 ### 2.2 FCAPS e Fault Management
 
@@ -40,19 +90,48 @@ events)"* — motiva a integração com um SIEM (secção 2.4).
 
 ### 2.3 Monitorização de larga escala: Prometheus / Zabbix
 
-[TODO: estado da arte de monitorização pull-based (Prometheus) vs. stacks
-alternativas (Zabbix, Telegraf/InfluxDB). Documentar e justificar a
-substituição de Prometheus por Zabbix, autorizada pelo docente
-("tecnologias podemos usar as que quisermos")]
+O syllabus da cadeira recomenda explicitamente o uso de Prometheus,
+seguindo o modelo *pull-based* (o servidor central faz *scrape* periódico
+de métricas expostas pelos próprios serviços), amplamente adotado em
+ambientes Kubernetes nativos pela sua integração direta com a API do
+cluster e pelo modelo de dados multidimensional (labels). Este projeto
+adota Zabbix como alternativa, uma plataforma de monitorização mais
+tradicionalmente orientada a infraestrutura, que suporta tanto o modelo
+pull (checks ativos/passivos via agente) como um modelo *push* através de
+proxies — este último particularmente relevante na topologia de rede do
+projeto, onde o site do cluster Incus/k3s está atrás de NAT e não é
+diretamente alcançável a partir das VMs que hospedam o Zabbix server
+(Secção 3.3). A substituição de Prometheus por Zabbix foi autorizada
+verbalmente pelo docente em aula, no contexto de liberdade de escolha
+tecnológica ("podemos usar as tecnologias que quisermos"); esta autorização
+deve ser confirmada por escrito antes da entrega final, dado o enunciado
+nomear Prometheus explicitamente.
 
 ### 2.4 SIEM e Attack-Defense Trees
 
-Definição de SIEM (slide 11): log management, SIM, SEM, normalização e
-correlação, MSS, compliance/reporting. Attack-Defense Trees (Lesson04,
-Kordy et al.): nós de ataque (raiz ampla, especialização progressiva nas
-folhas), nós de defesa como countermeasures, disjunctive/conjunctive
-refinement. [TODO: 1 parágrafo a justificar a escolha de Elastic Stack
-como SIEM, face à recomendação do syllabus (Wazuh) — ver 5]
+Um SIEM (Security Information and Event Management) combina as funções de
+*log management*, *Security Information Management* (SIM — armazenamento e
+análise histórica de logs) e *Security Event Management* (SEM —
+correlação e deteção em tempo quase real), tipicamente completadas por
+normalização de eventos de múltiplas fontes, motores de correlação,
+capacidades de resposta a incidentes e relatórios de compliance. Neste
+projeto, a função de SIEM é cumprida pelo Elastic Stack (Elasticsearch +
+Kibana + Filebeat), em substituição de Wazuh — ferramenta recomendada no
+syllabus pela sua capacidade nativa de *active response*. A escolha de
+Elastic cobre bem as funções de SIM/SEM e normalização, mas exige um
+mecanismo de resposta automática próprio (não nativo à licença base),
+discutido na Secção 5 como limitação a endereçar.
+
+Attack-Defense Trees (ADTrees), segundo a formulação de Kordy et al.
+referenciada no syllabus, modelam um cenário de ameaça como uma hierarquia
+onde o nó raiz representa o ativo ou objetivo visado, cada nível seguinte
+refina esse objetivo em sub-objetivos ou técnicas mais específicas
+(*disjunctive refinement*, OR — qualquer um basta; ou *conjunctive
+refinement*, AND — todos são necessários), e nós de defesa
+(*countermeasures*) se ligam ao nó de ataque específico que mitigam. As
+três ADTrees construídas para este projeto (Secção 4.2) seguem esta
+notação, com os serviços-alvo no topo da hierarquia, à semelhança do
+exemplo dos autores originais apresentado no syllabus.
 
 ---
 
@@ -116,8 +195,39 @@ Alertmanager/Zabbix para o SIEM]
 
 ### 4.1 Attack surfaces
 
-[TODO: mapa de superfície de ataque do sistema — endpoints expostos,
-pontos de confiança (registry), fronteiras de rede (NodePort/ClusterIP/NAT)]
+A superfície de ataque do sistema organiza-se em três camadas, cada uma
+com um conjunto distinto de pontos de exposição.
+
+**Camada de aplicação:** os cinco serviços expõem, no total, nove
+endpoints HTTP, nenhum deles protegido por autenticação ou autorização.
+O Service Registry é o ponto de maior concentração de risco: é o único
+componente que todos os outros quatro serviços consultam cegamente
+(`discover()`, `common.py`), e os seus endpoints de escrita (`/register`,
+`/unregister`) aceitam qualquer `name`/`url`/`instance_id` declarado pelo
+cliente, sem verificação de identidade. O Storage Service, apesar de
+pensado como acessível apenas através do Ingestion, expõe `/store` sem
+qualquer validação própria — uma segunda camada de confiança implícita
+que, como demonstrado em 5.3, é trivialmente contornável.
+
+**Camada de orquestração:** três dos cinco serviços (`registry`,
+`ingestion`, `analytics`) estão expostos como `type=NodePort`, tornando-os
+alcançáveis em qualquer nó do cluster a partir de qualquer ponto com
+reachability de rede, sem qualquer `NetworkPolicy` a restringir o tráfego
+interno entre pods no namespace `ssle`. O `storage`, embora configurado
+como `ClusterIP` — pensado para só ser alcançável de dentro do cluster —
+tem o seu IP de pod divulgado publicamente via `GET /services` do
+registry, anulando na prática essa barreira (I2).
+
+**Camada de rede/infraestrutura:** duas fronteiras de NAT separam o
+atacante do sistema consoante o ponto de partida: a bridge Incus
+(`incus-default`, NAT) isola a rede `10.255.255.0/24` da rede das VMs do
+mini SOC, e o `externalTrafficPolicy: Cluster` por omissão dos NodePorts
+introduz SNAT, mascarando o IP de origem real de um atacante externo nos
+logs da aplicação. A rede overlay do flannel (`10.42.0.0/16`), por sua
+vez, não é routável a partir de um contentor Incus genérico fora do
+cluster — uma barreira adicional confirmada empiricamente durante a PoC
+da Ameaça 3 (Secção 5.3), que reduz o conjunto de atacantes realistas
+àqueles com execução de código dentro da rede overlay do cluster.
 
 ### 4.2 Attack and Defense Trees
 
@@ -143,7 +253,12 @@ pod seguida de escrita direta. Uma única mitigação de baixo custo —
 impedir a divulgação de URLs internos no registry — neutraliza o ataque
 completo, sem necessidade das mitigações mais caras (ex. credencial por
 dispositivo). Esta observação informa a ordem de prioridade de
-implementação: [TODO — ordenar as mitigações por Effort/Impact]
+implementação: as mitigações de baixo esforço e alto impacto devem ser
+priorizadas primeiro, independentemente da ameaça a que pertencem — por
+exemplo, `Do not expose internal pod URLs` (Effort: Low) e `Require
+instance_id and restrict deletion` (Effort: Low) eliminam, por si só, o
+Attack Path mais barato de duas das três ameaças, antes de se avançar
+para mitigações de maior esforço como mTLS ou credenciais por dispositivo.
 
 ---
 
@@ -478,9 +593,81 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
     janela temporal, sinal de frota de sensores forjada.
   - [TODO: métricas concretas após ligação do Zabbix/Elastic]
 
-- **Action-response adopted:** [TODO — após execução da PoC]
+- **Action-response adopted:**
+  PoC executada em duas fases, com um refinamento de rede descoberto a
+  meio da execução (ver nota metodológica abaixo).
 
-- **Post-mortem of PoC:** [TODO — após execução]
+  **Fase A — Disclosure (Attack Path 1):**
+  ```
+  GET /services/storage-service  (via NodePort, do contentor attacker)
+  → url: "http://10.42.1.65:5002"
+  ```
+  Confirmado: o registry devolve o IP real do pod do Storage a qualquer
+  cliente não autenticado, incluindo um cliente externo ao cluster.
+
+  **Nota metodológica — refinamento do ponto de execução:** o IP do pod
+  pertence à rede overlay do flannel (`10.42.0.0/16`), que não é
+  routável a partir de um contentor Incus genérico (`attacker`, na rede
+  `10.255.255.0/24`) — confirmado por timeout (`curl` exit code 28) a
+  partir da VM Debian e `000` a partir do `attacker`. O `POST /store`
+  só foi bem-sucedido quando executado **a partir de dentro de um nó do
+  cluster** (`k3s-master`). Isto refina o modelo de ameaça original:
+  explorar I2 exige que o atacante tenha execução de código dentro da
+  rede overlay do cluster (ex: um pod comprometido, ou acesso a um nó),
+  não apenas presença genérica no mesmo site Incus — uma barreira
+  adicional não capturada na ADTree inicial, mas que não invalida a
+  vulnerabilidade: um único pod comprometido (por qualquer outro vetor)
+  dá acesso irrestrito a todos os outros serviços pela mesma via.
+
+  **Fase B — Escrita direta, bypass da validação (Attack Path 2):**
+  ```
+  POST http://10.42.1.65:5002/store (a partir de k3s-master)
+  {"device_id":"botnet-spoof-001","temperature":999.0}
+  → 200 {"status":"stored"}
+  ```
+  Um valor fisicamente impossível (999°C) — muito fora da gama `-50..150`
+  validada em `ingestion.py` — foi aceite sem qualquer rejeição.
+
+  **Simulação de escala (botnet):** 15 dispositivos forjados adicionais
+  (`bot-1`...`bot-15`), com temperaturas aleatórias entre 100°C e 500°C,
+  foram injetados da mesma forma, todos com `200 {"status":"stored"}`.
+
+- **Post-mortem of PoC:**
+  - **Impacto observado, quantificado:**
+
+    | Métrica | Antes da injeção | Depois (16 dispositivos forjados) |
+    |---|---|---|
+    | `average_temperature` | 24.6 °C | **64.93 °C** (+164%) |
+    | `max` | 29.41 °C | **456.0 °C** |
+    | `count` | 100 | 100 |
+
+    O `/average` do `analytics-service` — um endpoint consumido para
+    decisões a jusante — ficou completamente não confiável com apenas
+    16 escritas forjadas, sem qualquer credencial ou autenticação.
+  - **Limitação do próprio mecanismo de deteção interno:** o endpoint
+    `/anomalies` (`ANOMALY_THRESHOLD = 28.0`) devolveu `[]` mesmo com
+    valores muito acima do limiar. Causa identificada: `/anomalies`
+    opera sobre uma janela deslizante dos 100 registos mais recentes
+    (`GET /temperatures?limit=100` ao Storage); com o sensor legítimo a
+    gerar uma leitura a cada 5s, os valores forjados podem sair dessa
+    janela antes de serem consultados. **Achado relevante:** mesmo um
+    mecanismo de deteção de anomalias nativo da aplicação não é robusto
+    a um atacante que opere em rajadas curtas e espace a reconsulta —
+    reforça a necessidade de deteção centrada em logs/SIEM (janela
+    alargada, correlação temporal) em vez de depender só de filtros
+    aplicacionais de janela curta. **Confirmado duas vezes:** `[]`
+    imediatamente após a injeção, e novamente ~2h20m depois
+    (`?limit=100`, janela alargada) — nesse momento a janela continha
+    apenas as ~1400 leituras legítimas geradas pelo sensor real no
+    intervalo (uma leitura a cada 5s), todas entre 28.1 °C e 30.0 °C,
+    confirmando que os registos forjados tinham sido completamente
+    expulsos da janela de consulta sem deixar qualquer rasto acessível
+    pela própria API da aplicação.
+  - **Nenhum controlo de deteção estava ativo durante a PoC.**
+  - Evidência: `evidencia/poc3-average-poisoned.json`,
+    `evidencia/poc3-anomalies-poisoned.json`,
+    `evidencia/poc3-average-after-botnet.json`,
+    `evidencia/poc3-anomalies-wide-window.json`
 
 ---
 
@@ -494,12 +681,71 @@ do comportamento do sistema com e sem as mitigações implementadas]
 
 ## 7. Conclusions
 
-[TODO: principais achados e contributos; secção explícita "porque a
-solução não é perfeita" (slide 13) — SPOFs documentados (registry e
-storage com 1 réplica), perfil Incus privilegiado nos nós k3s, SNAT nos
-NodePorts afetando atribuição de origem, Werkzeug como servidor de
-desenvolvimento; ponte para trabalho futuro (Projeto 2 — tolerância a
-ataques, reutilizando esta arquitetura)]
+As três provas de conceito executadas confirmaram, com evidência
+quantificada e reprodutível, que as três ameaças do syllabus escolhidas
+são exploráveis na arquitetura construída, cada uma a partir de uma falha
+de design concreta e não de uma exploração sofisticada: ausência de
+autenticação no Service Registry (hijacking), ausência de limites e de
+controlo de taxa (DDoS), e ausência de validação independente no Storage
+combinada com divulgação de endereços internos (fraude de dados). O
+achado transversal mais relevante é que **o Service Registry concentra a
+maior parte do risco do sistema** — está presente em todas as três
+ADTrees como alvo direto ou como passo intermédio — o que o torna o
+candidato natural para a primeira prioridade de mitigação em qualquer
+iteração futura da arquitetura.
+
+Um segundo achado relevante, descoberto durante a execução das PoCs e não
+antecipado na modelação de ameaças inicial, é que **nem todas as
+superfícies de ataque teoricamente expostas são igualmente acessíveis na
+prática**: a rede overlay do flannel não é routável a partir de um
+contentor genérico fora do cluster, o que introduz uma barreira adicional
+de facto para a Ameaça 3. Isto não invalida a vulnerabilidade — qualquer
+ponto de execução dentro do cluster (incluindo um único pod comprometido
+por outro vetor) continua a ter acesso irrestrito — mas é um lembrete de
+que a topologia de rede real deve ser sempre validada empiricamente, e não
+apenas inferida a partir dos manifestos.
+
+### Porque esta solução não é perfeita
+
+A arquitetura apresenta limitações estruturais, documentadas e assumidas
+conscientemente, que condicionam tanto a severidade de alguns dos
+cenários testados como a fiabilidade da própria monitorização:
+
+- **Pontos únicos de falha (SPOF):** o Service Registry corre com uma
+  única réplica e estado inteiramente em memória (perdido num restart); o
+  Storage corre também com uma única réplica, ligada a um volume
+  `local-path` preso a um nó específico do cluster. Ambos foram
+  observados a reiniciar múltiplas vezes durante a execução das PoCs
+  (Secção 5.2).
+- **Perfil de contentor privilegiado:** os nós Incus do cluster k3s correm
+  com `security.privileged=true` e `security.nesting=true`, um requisito
+  do laboratório (não uma escolha de design) que, em caso de fuga de um
+  contentor, concederia root sobre a VM anfitriã.
+- **Atribuição de origem degradada:** o SNAT por omissão nos NodePorts, e
+  a camada adicional de NAT da bridge Incus, significam que o IP de
+  origem de um atacante externo real não chegaria limpo aos logs da
+  aplicação — a identificação da origem depende inteiramente do que o
+  próprio atacante decide declarar (ex: `location` no `/register`), o
+  que é ele próprio forjável, como demonstrado na Ameaça 1.
+- **Servidor de desenvolvimento em produção:** todos os cinco serviços
+  correm sobre o servidor de desenvolvimento do Werkzeug, explicitamente
+  desaconselhado para produção pela sua própria documentação, o que baixa
+  o limiar de esforço necessário para o DDoS demonstrado em 5.2.
+- **Mecanismo de deteção de anomalias de janela curta:** como demonstrado
+  em 5.3, o endpoint `/anomalies` da aplicação opera sobre uma janela
+  deslizante de apenas 100 registos, insuficiente para capturar um
+  ataque em rajada seguido de tráfego legítimo normal — reforçando que a
+  deteção de segurança não deve depender de mecanismos aplicacionais
+  pontuais, mas de um SIEM com janela de correlação alargada.
+
+### Trabalho futuro
+
+As limitações acima — em particular os SPOFs do Registry e do Storage —
+são o ponto de partida natural para o Projeto 2, que reutilizará esta
+mesma arquitetura sob o tema de tolerância a ataques: réplicas com estado
+partilhado, mecanismos de consenso ou quorum para o registry, e
+redundância do volume de dados são passos diretos a partir do que aqui
+foi identificado como limitação, não como trabalho em separado.
 
 ---
 
