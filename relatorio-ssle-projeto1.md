@@ -22,178 +22,37 @@ uma frase de cada secção seguinte]
 
 ## 2. Relevant State of the Art
 
-Esta secção resume os conceitos e ferramentas em que o projeto se apoia,
-seguindo o syllabus da unidade curricular. Não pretende ser um levantamento
-exaustivo da literatura, mas sim enquadrar as escolhas feitas nas secções
-seguintes.
+[TODO: enquadramento teórico, referenciando o syllabus da cadeira — não é
+sobre o teu sistema, é sobre os conceitos usados]
 
 ### 2.1 Service-Oriented Architecture / Microservices
 
-Os sistemas de ultra-larga escala (ULSS) caracterizam-se por dados,
-desenvolvimento e controlo descentralizados, requisitos heterogéneos e em
-mudança, evolução contínua em operação e falhas tratadas como regra e não
-como exceção (Aula 2, recapitulação do relatório SEI/CMU). A
-*Service-Oriented Architecture* (SOA) responde a estes requisitos
-organizando a lógica da solução em **serviços**: conjuntos de
-funcionalidades acessíveis através de uma interface prescrita e de um
-contrato, com políticas de utilização associadas.
-
-Os princípios de orientação a serviços relevantes para este projeto são:
-*loose coupling*, contrato de serviço, autonomia, abstração, reutilização,
-composição, *statelessness* e *discoverability*, a que se soma o
-encapsulamento de serviços legados. Os papéis definidos são o **Service
-Provider**, que publica as suas capacidades; o **Service Consumer**, que
-procura e invoca serviços ("intent driven"); e o **Service Broker**, cujo
-caso mais comum é o **Service Registry**, que media a descoberta
-(*publish → find → bind*).
-
-Os **microsserviços** são uma variante mais informal de SOA: não existe um
-*bus* central de mensagens, e os serviços descobrem-se através do registry
-e comunicam diretamente entre si (tipicamente REST/HTTP). Este é o modelo
-adotado no projeto (secção 3).
-
-Do ponto de vista de segurança, a Aula 2 destaca dois pontos que são
-diretamente relevantes para as ameaças da secção 5:
-- o encapsulamento permite acrescentar controlos de segurança granulares
-  sobre serviços que não foram desenhados para isso;
-- TLS/HTTPS (e mTLS) garante confidencialidade, integridade e autenticação
-  entre serviços e brokers, assente numa PKI cuja validação (extensões,
-  CRLs) exige cuidado. A ausência destes controlos, num registry que é por
-  definição um ponto de confiança, é a raiz da Ameaça 1.
-
-Para o *deployment* recorre-se ao modelo da indústria de telecomunicações e
-cloud (Guião 2): um *Virtual Infrastructure Manager* no sentido ETSI NFV
-(aqui o **Incus**, fork do LXD) fornece contentores e redes, e uma camada
-PaaS (**k3s**, distribuição leve de Kubernetes) orquestra as imagens Docker
-dos serviços, com escalamento horizontal por réplicas.
+[TODO: definição SOA (Aula 2/Guia 1) — provider/consumer/broker/registry,
+loose coupling, discoverability]
 
 ### 2.2 FCAPS e Fault Management
 
-O modelo **FCAPS** (ISO/IEC 7498-4:1989), adotado pela ITU-T no modelo TMN
-(M.3000), divide a gestão de redes em cinco áreas: **Fault**
-(comportamento anómalo, seja por avaria, erro de configuração ou evento
-externo), **Configuration** (recolha, alteração e rastreio de
-configurações), **Accounting** (consumo de recursos e faturação),
-**Performance** (QoS e KPIs medidos face aos SLAs) e **Security**
-(proteção dos ativos segundo a tríade CIA, com ênfase em controlo de acesso
-e gestão de identidades).
-
-O workflow de *Fault Management* (Lesson03/04) segue cinco fases:
-**Detecting** (os dados de monitorização mostram um desvio do normal) →
-**Diagnosing and Isolating** (identificar o problema, a sua origem e
-localização) → **Correlating** (analisar dependências e histórico de falhas
-em conjunto, chegando a uma lista curta de causas) → **Resolution /
-Mitigation** → **Post-Mortem** (validar a solução e documentar as lições
-aprendidas). Esta estrutura é reutilizada na discussão de cada ameaça
-(secção 5).
-
-Como nota o enunciado do projeto, *"Fault Management within FCAPS does not
-deal with security events (i.e., at least explicit security events)"*. Um
-ataque de DoS, por exemplo, surge primeiro como uma falha de Performance ou
-Fault, sem ser identificado como incidente de segurança. Daí a necessidade
-de complementar a monitorização FCAPS com um SIEM (secção 2.4) e de
-correlacionar os dois.
-
-A Aula 3 observa ainda que um sistema FCAPS completo, normalizado em 1989,
-é praticamente impossível de implementar em larga escala sem SOA: os
-requisitos mudam, os serviços são heterogéneos e o escalamento horizontal é
-o que permite acompanhar o crescimento. Plataformas reais (OpenStack, Nokia
-Cloud Mobility Manager, AGORA da Altice Labs) seguem precisamente esta
-abordagem de serviços fracamente acoplados.
+Modelo FCAPS (ISO/IEC 7498-4), com foco no workflow de Fault Management:
+Detecting → Diagnosing and Isolating → Correlating → Resolution/Mitigation
+→ Post-Mortem (Lesson03). Nota do syllabus: *"Fault Management within FCAPS
+does not deal with security events (i.e., at least explicit security
+events)"* — motiva a integração com um SIEM (secção 2.4).
 
 ### 2.3 Monitorização de larga escala: Prometheus / Zabbix
 
-Para detetar falhas é preciso primeiro observar e recolher métricas. Estas
-vêm de várias fontes (*probes*) e só se tornam indicadores depois de
-interpretadas; a ADTree indica quais as partes do sistema mais sensíveis e
-que, por isso, merecem monitorização dedicada (Lesson04). As soluções
-abordadas na unidade curricular são:
-
-| Solução | Modelo | Pontos fortes | Limitações |
-|---|---|---|---|
-| **Prometheus** (+ Alertmanager, Grafana) | *Pull*: faz *scrape* HTTP a *exporters*; *Pushgateway* para jobs de curta duração | Nativo em Kubernetes (service discovery), PromQL, alerting integrado | Pensado para métricas, não para logs; federação necessária para vários sites |
-| **TICK** (Telegraf, InfluxDB, Chronograf, Kapacitor) | *Push* de agentes para uma TSDB | Serviços fracamente acoplados, flexível, débito elevado | Escalamento sobretudo vertical; clustering exige licença comercial |
-| **Zabbix** (server, proxy, agentes) | Agentes ativos/passivos, com *proxies* por site | Muito integrado, templates, dependências entre *triggers* | Menos adequado a escala massiva, segundo a Lesson04 |
-
-O enunciado recomenda o Prometheus. Neste projeto foi usado **Zabbix**,
-substituição autorizada pelo docente. A escolha justifica-se por dois
-requisitos da arquitetura:
-1. **Monitorização por localização com otimização de largura de banda**
-   (slide 7, bónus). O **Zabbix proxy** recolhe localmente os dados de um
-   site e envia-os agregados ao servidor central, o que corresponde
-   diretamente a este requisito. Em Prometheus o equivalente exige
-   federação ou *remote write*.
-2. **NAT entre o site Incus e o servidor central.** O proxy em modo ativo
-   inicia a ligação para fora, dispensando *port forwarding*. Já o modelo
-   *pull* do Prometheus exige que o servidor alcance cada alvo.
-
-As *trigger dependencies* do Zabbix cumprem o papel das *inhibit rules* do
-Alertmanager: suprimem alertas derivados (ex.: "ingestion lenta") quando a
-causa-raiz ("registry em baixo") já está ativa, o que apoia a fase de
-*Correlating* do workflow FCAPS.
+[TODO: estado da arte de monitorização pull-based (Prometheus) vs. stacks
+alternativas (Zabbix, Telegraf/InfluxDB). Documentar e justificar a
+substituição de Prometheus por Zabbix, autorizada pelo docente
+("tecnologias podemos usar as que quisermos")]
 
 ### 2.4 SIEM e Attack-Defense Trees
 
-**SIEM.** Um *Security Information and Event Management* (Aula 5) combina:
-*log management* (recolha de rede, servidores, aplicações, endpoints e
-cloud); **SIM** (armazenamento de longo prazo para análise, auditoria e
-compliance); **SEM** (monitorização em tempo real, regras, *threat
-intelligence* e alertas); **normalização e correlação** (formato comum e
-ligação entre eventos aparentemente independentes); **MSS** (resposta
-automatizada, como isolar sistemas ou bloquear IPs); e *compliance and
-reporting*. O enunciado pede foco nos quatro primeiros.
-
-Um SIEM é potenciado por capacidades de **XDR / HIDS**: agentes nos hosts
-que pré-correlacionam logs, verificam integridade de ficheiros, detetam
-rootkits e executam *active response*. O **OSSEC** é o HIDS open-source de
-referência, e o **Wazuh** (recomendado no enunciado e usado no Guião 4)
-estende-o com agente multiplataforma, servidor de análise (regras,
-enriquecimento MITRE ATT&CK e compliance), *indexer* e *dashboard*.
-Alternativas comerciais referidas no syllabus incluem IBM QRadar, Splunk e
-Microsoft Sentinel.
-
-Neste projeto usa-se o **Elastic Stack** (Filebeat → Elasticsearch →
-Kibana/Elastic Security). A escolha é coerente com o estado da arte: o
-próprio Wazuh foi construído sobre o Elastic Stack e o seu *indexer* é um
-fork do OpenSearch, pelo que o modelo de dados (documentos JSON em índices,
-*shards* e réplicas) e as capacidades de pesquisa e correlação são
-equivalentes. O Filebeat, com metadados de Kubernetes, enriquece cada log
-com o pod e o node de origem, o que, junto com o `instance_id` do esquema
-de naming (secção 3.2), permite localizar rapidamente a fonte de um
-incidente. A contrapartida é que o Elastic não traz de raiz o HIDS nem o
-*active response* do Wazuh. As ações de resposta são por isso
-implementadas à parte (secção 5), e esta limitação é retomada nas
-conclusões.
-
-**Attack surface e CAPEC.** A superfície de ataque é o conjunto de todos os
-pontos de entrada através dos quais um atacante pode afetar a
-confidencialidade, integridade ou disponibilidade do sistema (Lesson04).
-O MITRE CAPEC organiza os padrões de ataque por **domínio** (CAPEC-3000:
-comunicações, software, hardware, supply chain, engenharia social,
-segurança física) e por **mecanismo** (CAPEC-1000: interações
-enganadoras/*spoofing*, abuso de funcionalidade existente, manipulação de
-recursos, injeção, técnicas probabilísticas, manipulação de *timing* e
-estado, recolha de informação, subversão de controlo de acesso, entre
-outros). As três ameaças tratadas na secção 5 situam-se no domínio de
-comunicações e software e correspondem, respetivamente, a *spoofing* /
-subversão de controlo de acesso (registry), abuso de funcionalidade /
-manipulação de recursos (DoS) e recolha de informação seguida de injeção
-de dados (botnet / fraude).
-
-**Attack-Defense Trees.** As ADTrees (Kordy et al., *Foundations of
-Attack–Defense Trees*, 2010) representam numa única árvore os ataques e as
-respetivas contramedidas, ao contrário das abordagens que separam árvores
-de ataque e de defesa. A raiz representa o objetivo mais geral do atacante
-e cada nível especializa-o. Os **nós de ataque** (círculos vermelhos)
-representam ativos visados perto da raiz e formas concretas de ataque nas
-folhas. Os **nós de defesa** (retângulos verdes) representam contramedidas,
-com mais detalhe de execução quanto mais perto das folhas. As relações são:
-**refinamento disjuntivo** (OR: basta um filho), **refinamento conjuntivo**
-(AND: todos os filhos têm de se verificar) e **countermeasure** (linha
-pontilhada, uma defesa aplicada a um ataque, que pode por sua vez ser
-contrariada por outro ataque). Esta distinção OR/AND é usada na secção 4.4
-para priorizar mitigações: num ramo conjuntivo, basta bloquear um dos
-passos para neutralizar o ataque completo.
+Definição de SIEM (slide 11): log management, SIM, SEM, normalização e
+correlação, MSS, compliance/reporting. Attack-Defense Trees (Lesson04,
+Kordy et al.): nós de ataque (raiz ampla, especialização progressiva nas
+folhas), nós de defesa como countermeasures, disjunctive/conjunctive
+refinement. [TODO: 1 parágrafo a justificar a escolha de Elastic Stack
+como SIEM, face à recomendação do syllabus (Wazuh) — ver 5]
 
 ---
 
@@ -338,6 +197,8 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
   - ADTree: `adtrees-ssle-projeto1.md`, árvore 1 (disjunctive refinement —
     qualquer um dos 3 paths é suficiente)
 
+![ADTree 1 — Service Registry](images/adtree1-hijacking.png)
+
 - **Relevant monitoring/mitigation actions/metrics:**
   - Require mutual TLS and identity-bound registration (Development, High
     effort, Preventive): client certificate CN must match the registered
@@ -419,6 +280,11 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
     trivialmente reprodutível por qualquer entidade com acesso de rede ao
     registry, sem qualquer conhecimento prévio do sistema — reforça a
     classificação de Complexity "Ordinary" atribuída na ADTree.
+  - **Nota metodológica:** os contentores Incus operam em `Etc/UTC`
+    enquanto a VM hospedeira opera em `Europe/Lisbon` (WEST, UTC+1);
+    confirmado via `timedatectl` que o desvio é uniforme entre todos os
+    contentores, pelo que a ordem relativa dos eventos documentados
+    permanece válida.
   - Evidência: `evidencia/poc1-registry-poisoned.json`,
     `evidencia/poc1-roundrobin-alternancia.txt`,
     `evidencia/poc1-intercepted-data.log`,
@@ -464,6 +330,8 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
   - ADTree: `adtrees-ssle-projeto1.md`, árvore 2 (disjunctive refinement —
     qualquer um dos 2 paths é suficiente)
 
+![ADTree 2 — DDoS](images/adtree2-ddos.png)
+
 - **Relevant monitoring/mitigation actions/metrics:**
   - Enforce `1 <= limit <= 1000` in `storage.py` and `analytics.py`
     (Development, Low effort, Preventive): closes Attack Path 1.
@@ -481,9 +349,71 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
     SQLite.
   - [TODO: métricas concretas após ligação do Zabbix/Elastic]
 
-- **Action-response adopted:** [TODO — após execução da PoC]
+- **Action-response adopted:**
+  PoC executada a partir do contentor `attacker` (10.255.255.184), com
+  dois vetores testados isoladamente e em sequência contra os NodePorts
+  do `analytics-service` (30003) e `ingestion-service` (30001).
 
-- **Post-mortem of PoC:** [TODO — após execução]
+  **Vetor 1 — Unbounded query:**
+  ```
+  GET /anomalies?limit=100   → 0.102s (baseline normal)
+  GET /anomalies?limit=-1    → 2.783s, 290 277 bytes devolvidos
+  ```
+  Um único parâmetro alterado resultou em **~27× mais tempo de resposta**
+  e num payload que, por omissão, estaria limitado a uma fração do
+  tamanho. Confirma CWE-770 de forma quantitativa.
+
+  **Vetor 2 — Flood sobre /ingest, execuções sucessivas:**
+
+  | Execução | Pedidos | Paralelismo | Falhas (502) | Taxa |
+  |---|---|---|---|---|
+  | 1 (imediatamente após o vetor 1) | 200 | 20 | 11 | 5.5% |
+  | 2 (isolada) | 500 | 50 | 0 | 0% |
+  | 3 (repetição do teste 1) | 200 | 20 | **153** | **76.5%** |
+
+  A taxa de erro não foi constante nem previsível a partir do volume de
+  pedidos isoladamente — foi a **repetição e proximidade temporal** dos
+  testes que produziu a degradação mais severa (execução 3), sugerindo
+  um efeito cumulativo sobre os limites de CPU (250m) partilhados pelos
+  pods do namespace `ssle`, consistente com I5. Após ~30s sem carga, o
+  sistema recuperou (`GET /health` voltou a responder 200), confirmando
+  que a degradação foi temporária e não um colapso permanente.
+
+- **Post-mortem of PoC:**
+  - **Impacto observado:** DoS parcial e reprodutível, não um colapso
+    total — a taxa de falha variou entre 0% e 76.5% consoante o estado
+    de saturação prévio do sistema, mostrando que o impacto de um
+    atacante de baixo esforço é **cumulativo** e não isolado por pedido.
+  - **Mecanismo de recuperação:** confirmado via `kubectl get pods`
+    (namespace `ssle`), que o pod `storage` acumulou **11 restarts**, com
+    o mais recente a ocorrer **52 minutos antes da verificação** — uma
+    janela temporal consistente com a execução das PoCs 1 e 2 no mesmo
+    dia. Os restantes pods (`analytics`, `ingestion`, `registry`,
+    `sensor`) apresentavam entre 8 e 9 restarts cada, todos com idade de
+    19 dias mas restarts recentes concentrados nas últimas ~2h de
+    execução das PoCs. Isto confirma que **a recuperação não resultou de
+    resiliência aplicacional, mas do mecanismo de restart do Kubernetes**
+    (`livenessProbe`/`readinessProbe`, `periodSeconds: 10`, Secção 3.3):
+    o Kubernetes reinicia um pod que deixa de responder a `/health`,
+    substituindo-o por uma nova instância — uma forma indireta e não
+    controlada de mitigação, sem qualquer envolvimento do código da
+    aplicação. A confirmação final (`GET /health` → `{"status":"ok"}`,
+    `200`) foi obtida depois da reinicialização, validando que o sistema
+    estava operacional outra vez no momento da verificação.
+  - **Nenhum controlo de deteção estava ativo durante a PoC**: a
+    degradação e a recuperação ocorreram sem qualquer alerta gerado,
+    confirmando a prioridade de `Configure Zabbix/Elastic alerts for DDoS
+    indicators` definida em "Relevant monitoring/mitigation actions/metrics".
+  - **Limitação identificada:** a ausência de rate limiting significa que
+    o comportamento observado (degradação progressiva com repetição) é
+    inteiramente dependente do timing das execuções do atacante, não de
+    um limiar fixo do sistema — o que torna o impacto real **imprevisível
+    para um operador sem monitorização ativa**, agravando a severidade
+    relativa a um DoS com comportamento constante e previsível.
+  - Evidência: `evidencia/poc2-dump-limit-negativo.json`,
+    `evidencia/poc2-dump-limit-normal.json`, `evidencia/poc2-flood-500.txt`,
+    `evidencia/poc2-pods-apos-recuperacao.txt`,
+    `evidencia/poc2-health-recuperado.txt`
 
 ### 5.3 Ameaça 3 — Botnets / Data Fraud
 
@@ -528,6 +458,8 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
     ambos necessários (AND), o que reduz estruturalmente a probabilidade
     face aos vetores de um único passo. Ver 4.4 para a implicação na
     priorização de mitigação.
+
+![ADTree 3 — Botnet/Fraude de Dados](images/adtree3-botnet-fraude.png)
 
 - **Relevant monitoring/mitigation actions/metrics:**
   - Do not expose internal pod URLs in unauthenticated registry reads
