@@ -13,14 +13,6 @@ Evaluation of the solution's approaches and scalability · Conclusions
 
 ## 1. Introduction
 
-Sistemas distribuídos de larga escala assentam cada vez mais em
-arquiteturas orientadas a serviços (SOA), onde múltiplos componentes
-independentes comunicam através de um mecanismo de descoberta partilhado.
-Esta descentralização traz benefícios de escalabilidade e manutenibilidade,
-mas desloca também a superfície de ataque: comprometer o ponto de
-descoberta compromete, por transitividade, todos os serviços que nele
-confiam.
-
 Este relatório documenta o desenho, implementação e análise de segurança
 de uma arquitetura SOA de pequena escala — um pipeline de ingestão,
 armazenamento e análise de dados de sensores — construída sobre os Guiões
@@ -88,7 +80,7 @@ Detecting → Diagnosing and Isolating → Correlating → Resolution/Mitigation
 does not deal with security events (i.e., at least explicit security
 events)"* — motiva a integração com um SIEM (secção 2.4).
 
-### 2.3 Monitorização de larga escala: Prometheus / Zabbix
+### 2.3 Monitorização de larga escala: Zabbix
 
 O syllabus da cadeira recomenda explicitamente o uso de Prometheus,
 seguindo o modelo *pull-based* (o servidor central faz *scrape* periódico
@@ -115,12 +107,14 @@ análise histórica de logs) e *Security Event Management* (SEM —
 correlação e deteção em tempo quase real), tipicamente completadas por
 normalização de eventos de múltiplas fontes, motores de correlação,
 capacidades de resposta a incidentes e relatórios de compliance. Neste
-projeto, a função de SIEM é cumprida pelo Elastic Stack (Elasticsearch +
-Kibana + Filebeat), em substituição de Wazuh — ferramenta recomendada no
-syllabus pela sua capacidade nativa de *active response*. A escolha de
-Elastic cobre bem as funções de SIM/SEM e normalização, mas exige um
-mecanismo de resposta automática próprio (não nativo à licença base),
-discutido na Secção 5 como limitação a endereçar.
+projeto, a função de SIEM é cumprida pelo Wazuh, a ferramenta recomendada
+no syllabus e usada nas aulas práticas. Os agentes Wazuh recolhem os logs
+dos nós (*log management*), o Wazuh indexer guarda-os e permite a análise
+histórica (SIM), e o motor de regras e decoders do manager faz a
+normalização e a correlação de eventos em tempo quase real (SEM). A
+capacidade nativa de *active response* permite associar a cada deteção uma
+ação automática de contenção, usada para as três ameaças tratadas na
+Secção 5.
 
 Attack-Defense Trees (ADTrees), segundo a formulação de Kordy et al.
 referenciada no syllabus, modelam um cenário de ameaça como uma hierarquia
@@ -186,8 +180,8 @@ pedidos no slide 7:
 ### 3.4 Integração com monitorização/SIEM
 
 [TODO: Zabbix proxy no site Incus (modo ativo, devido ao NAT) +
-Filebeat → Elasticsearch; correlação FCAPS↔segurança via webhook do
-Alertmanager/Zabbix para o SIEM]
+agente Wazuh nos nós k3s → Wazuh manager; correlação FCAPS↔segurança via
+envio dos alertas do Zabbix para o Wazuh]
 
 ---
 
@@ -239,7 +233,7 @@ export do attacktree.online (Anexo C/D).
 
 ### 4.3 Large-scale system monitoring
 
-[TODO: como o esquema de naming (3.2) e a correlação Zabbix/Elastic
+[TODO: como o esquema de naming (3.2) e a correlação Zabbix/Wazuh
 suportam deteção e root-cause analysis à escala — referir Alertmanager
 inhibit rules / trigger dependencies]
 
@@ -312,7 +306,7 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
   - ADTree: `adtrees-ssle-projeto1.md`, árvore 1 (disjunctive refinement —
     qualquer um dos 3 paths é suficiente)
 
-![ADTree 1 — Service Registry](images/adtree1-hijacking.png)
+![ADTree 1 — Service Registry](<images/addtree1-Service Registry Hijack.png>)
 
 - **Relevant monitoring/mitigation actions/metrics:**
   - Require mutual TLS and identity-bound registration (Development, High
@@ -326,7 +320,7 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
   - Alert on registration anomalies (Configuration, Medium effort,
     Detective): monitor for registration overwrites or location fields
     inconsistent with known deployment regions.
-  - [TODO: métricas concretas do Zabbix/Elastic após ligação — taxa de
+  - [TODO: métricas concretas do Zabbix/Wazuh após ligação — taxa de
     `POST /register`/`DELETE /unregister`, cardinalidade de
     `instance_id` por serviço]
 
@@ -405,6 +399,165 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
     `evidencia/poc1-intercepted-data.log`,
     `evidencia/poc1-unregister-dos.json`
 
+#### 5.1.1 Detection and Active-Response (Phase 4)
+
+A deteção e resposta para esta ameaça foram implementadas sobre o Wazuh
+(manager já disponível do Guião 4, `wazuh-container`), com o agente
+instalado no `k3s-master`.
+
+**Pipeline de deteção:**
+```
+registry (deploy) → kubectl logs -f (systemd: ssle-registry-stream)
+  → /var/log/registry-stream.log → agente Wazuh (<localfile>)
+  → manager → regra local 100100 (etc/rules/local_rules.xml)
+```
+
+Regra criada:
+```xml
+<group name="ssle,hijacking,">
+  <rule id="100100" level="12">
+    <if_sid>1</if_sid>
+    <match type="pcre2">\[\+\].*storage-service</match>
+    <description>SSLE: tentativa de hijacking do Service Registry detetada</description>
+    <group>ssle_hijacking,</group>
+  </rule>
+</group>
+```
+
+**Nota técnica relevante:** a tag `<match>` do Wazuh usa por omissão o
+motor OSRegex, não PCRE. A expressão `\[\+\].*storage-service`, válida em
+Python/PCRE, não casava com o evento sob OSRegex — a regra era avaliada
+(`Trying rule: 100100`) mas nunca correspondia (`*Rule matched` nunca
+aparecia). A correção foi declarar explicitamente `type="pcre2"` na tag
+`<match>`. Adicionalmente, a inclusão do ficheiro `local_rules.xml` no
+`ossec.conf` do manager exigia a tag `<rule_include>`, não `<rule>` (esta
+última gera um erro de configuração — `ERROR (1230): Invalid element` —
+que não impede o arranque do serviço, mas faz o manager correr com a
+configuração anterior/default, mascarando silenciosamente a ausência da
+regra local).
+
+**Deteção confirmada:** reexecutada a Fase A da PoC (registo de instância
+falsa), o alerta foi gerado em produção, não apenas em teste isolado:
+```
+Rule: 100100 (level 12) -> 'SSLE: tentativa de hijacking do Service Registry detetada'
+[+] xx.evil.e2e.storage-service.pwnedH -> http://10.255.255.184:9999
+```
+
+A mesma tentativa foi também detetada do lado da monitorização: o Zabbix
+levantou um problema de severidade *High* ("Possivel hijacking do Service
+Registry") no host `ssle-k3s-cluster`, como mostra a figura seguinte. A
+ameaça fica assim visível nas duas camadas, na monitorização (Zabbix) e no
+SIEM (Wazuh).
+
+![Deteção da Ameaça 1 no Zabbix — problema "Possivel hijacking do Service Registry" (severidade High) no host ssle-k3s-cluster](<evidencias-detecao/Deteção Ameaça 1 (Zabbix nativo).png>)
+
+**Active-response nativo — falha identificada e documentada:** o Wazuh
+associa automaticamente o comando `firewall-drop` a alertas de nível ≥ 10
+(a regra 100100 está em `level="12"`), sem necessidade de configuração
+explícita adicional. O active-response disparou (`Rule: 651 'Host Blocked
+by firewall-drop Active Response'`), mas falhou na execução:
+```
+active-response/bin/firewall-drop: Cannot read 'srcip' from data or invalid IP format
+```
+
+**Causa raiz:** o `firewall-drop` do Wazuh espera que o alerta contenha um
+campo `srcip` extraído por um decoder — nenhum decoder customizado foi
+criado para extrair um endereço IP do formato de log da aplicação
+(`[+] <instance_id> -> <url>`), e a aplicação em si nunca regista o IP de
+origem do pedido HTTP que efetuou o `POST /register` (só o payload
+declarado pelo próprio cliente). O resultado é uma falha silenciosa: o
+active-response é acionado, mas não produz qualquer efeito de contenção.
+
+Este resultado **confirma empiricamente, com dados reais e não apenas
+teoricamente, o risco R3 já identificado na análise de superfície de
+ataque (Secção 4.1)** — "active response abusável/self-DoS" — estendido
+aqui a uma nova dimensão: nem é necessário um atacante induzir o bloqueio
+de um alvo errado para o active-response ser ineficaz; a simples ausência
+de um campo de IP extraível no pipeline de logs é suficiente para o
+tornar inoperante por omissão. A Secção 5.1.2 documenta a correção
+implementada, que substitui o `firewall-drop` por uma resposta que não
+depende de extração de IP.
+
+#### 5.1.2 Active-Response corrigido — remoção automática da entrada maliciosa
+
+Em substituição ao `firewall-drop` nativo (Secção 5.1.1), foi implementado
+um script de active-response próprio, independente de extração de `srcip`:
+
+```bash
+#!/bin/bash
+curl -s -X DELETE "http://10.255.255.42:30050/unregister" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"storage-service"}' \
+  >> /var/ossec/logs/active-responses.log 2>&1
+```
+
+Associado à regra via:
+```xml
+<command>
+  <name>remove-malicious-registry</name>
+  <executable>remove-malicious-registry.sh</executable>
+  <timeout_allowed>no</timeout_allowed>
+</command>
+<active-response>
+  <command>remove-malicious-registry</command>
+  <location>server</location>
+  <rules_id>100100</rules_id>
+</active-response>
+```
+
+**Nota técnica:** `<location>local</location>` não executou o script em
+nenhum teste; a correção foi usar `<location>server</location>`. A causa
+exata não foi isolada com certeza (pode ser particular da versão 4.14.9),
+mas a distinção é relevante o suficiente para documentar: nem toda a
+terminologia de "local vs. server" no active-response do Wazuh é
+intercambiável, apesar de o manager ser, neste caso, o único nó que
+precisa de executar o script.
+
+**Falso-positivo identificado e corrigido durante a implementação:** a
+regra 100100 original (`\[\+\].*storage-service`, sem distinção de
+origem) disparava também para os heartbeats legítimos do storage real
+(re-registo a cada ~15s via `register_service()` em `common.py`),
+acionando o active-response em loop contínuo — o sistema estava, na
+prática, a executar `DELETE /unregister` sobre si próprio a cada
+heartbeat, um caso real e medido de **self-inflicted DoS por
+active-response mal calibrado**, confirmando concretamente o risco R3 já
+identificado na análise de superfície de ataque. A correção introduziu
+uma segunda regra, mais específica e de nível baixo, que intercepta
+registos de nós conhecidos antes da regra genérica disparar:
+
+```xml
+<rule id="100101" level="3">
+  <if_sid>100100</if_sid>
+  <match type="pcre2">k3s-node1\.storage-service|k3s-master\.storage-service</match>
+  <description>SSLE: registo legítimo de storage-service (nó conhecido)</description>
+  <group>ssle_hijacking,legitimate,</group>
+</rule>
+```
+
+**Resultado final, confirmado empiricamente em teste de ponta a ponta:**
+
+| Evento | Regra disparada | Active-response |
+|---|---|---|
+| Heartbeat legítimo (nó real, `k3s-node1`) | 100101 (level 3) | Não disparou |
+| Registo malicioso (`instance_id` com nó desconhecido) | 100100 (level 12) | Disparou — `{"message":"unregistered"}` |
+
+A contagem de linhas em `active-responses.log` permaneceu estável
+(9 linhas) durante uma janela de observação de 20s sem ataque, e
+incrementou exatamente em 1 (9→10) no momento do ataque seguinte,
+confirmando que o sistema distingue corretamente tráfego legítimo de
+malicioso e reage apenas ao segundo, sem efeitos colaterais sobre o
+funcionamento normal do pipeline.
+
+**Limitação residual a documentar:** a resposta continua a remover
+**todas** as instâncias de `storage-service` (real e maliciosa), por o
+endpoint `/unregister` do `registry.py` não aceitar um filtro por
+`instance_id` pattern. O sistema autorrecupera a instância real via
+heartbeat (~15s), mas isto significa que a resposta automática, tal como
+implementada, causa uma breve janela de indisponibilidade do serviço
+mesmo quando reage corretamente — um compromisso entre mitigação
+automática e disponibilidade que uma versão futura do `registry.py`
+deveria resolver com um endpoint de remoção seletiva.
+
 ### 5.2 Ameaça 2 — Massive Denial-of-Service
 
 - **Description of the threat:**
@@ -458,11 +611,11 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
     effort, Preventive): gunicorn/uWSGI with multiple workers.
   - Tune Kubernetes resource requests/limits (Configuration, Low effort,
     Preventive).
-  - Configure Zabbix/Elastic alerts for DDoS indicators (Configuration,
+  - Configure Zabbix/Wazuh alerts for DDoS indicators (Configuration,
     Medium effort, Detective): request-rate spikes on `/ingest` e
     `/anomalies`, latência do registry, taxa de 5xx, duração de queries
     SQLite.
-  - [TODO: métricas concretas após ligação do Zabbix/Elastic]
+  - [TODO: métricas concretas após ligação do Zabbix/Wazuh]
 
 - **Action-response adopted:**
   PoC executada a partir do contentor `attacker` (10.255.255.184), com
@@ -517,7 +670,7 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
     estava operacional outra vez no momento da verificação.
   - **Nenhum controlo de deteção estava ativo durante a PoC**: a
     degradação e a recuperação ocorreram sem qualquer alerta gerado,
-    confirmando a prioridade de `Configure Zabbix/Elastic alerts for DDoS
+    confirmando a prioridade de `Configure Zabbix/Wazuh alerts for DDoS
     indicators` definida em "Relevant monitoring/mitigation actions/metrics".
   - **Limitação identificada:** a ausência de rate limiting significa que
     o comportamento observado (degradação progressiva com repetição) é
@@ -591,7 +744,7 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
   - Anomaly scoring on `device_id` cardinality (Configuration, Medium
     effort, Detective): deteção de picos de `device_id` distintos por
     janela temporal, sinal de frota de sensores forjada.
-  - [TODO: métricas concretas após ligação do Zabbix/Elastic]
+  - [TODO: métricas concretas após ligação do Zabbix/Wazuh]
 
 - **Action-response adopted:**
   PoC executada em duas fases, com um refinamento de rede descoberto a
@@ -673,7 +826,7 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
 
 ## 6. Evaluation of the Solution's Approaches and Scalability
 
-[TODO: testes de carga, cardinalidade de séries no Zabbix/Elastic, EPS do
+[TODO: testes de carga, cardinalidade de séries no Zabbix/Wazuh, EPS do
 SIEM, latência de scrape/ingestão vs. número de nós/réplicas; comparação
 do comportamento do sistema com e sem as mitigações implementadas]
 
