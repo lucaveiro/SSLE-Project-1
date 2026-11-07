@@ -93,11 +93,11 @@ pull (checks ativos/passivos via agente) como um modelo *push* através de
 proxies — este último particularmente relevante na topologia de rede do
 projeto, onde o site do cluster Incus/k3s está atrás de NAT e não é
 diretamente alcançável a partir das VMs que hospedam o Zabbix server
-(Secção 3.3). A substituição de Prometheus por Zabbix foi autorizada
-verbalmente pelo docente em aula, no contexto de liberdade de escolha
-tecnológica ("podemos usar as tecnologias que quisermos"); esta autorização
-deve ser confirmada por escrito antes da entrega final, dado o enunciado
-nomear Prometheus explicitamente.
+(Secção 3.3). A substituição de Prometheus por Zabbix foi autorizada pelo docente, no
+contexto de liberdade de escolha tecnológica ("podemos usar as
+tecnologias que quisermos"), confirmada verbalmente em aula e
+posteriormente por escrito, dado o enunciado nomear Prometheus
+explicitamente.
 
 ### 2.4 SIEM e Attack-Defense Trees
 
@@ -160,9 +160,13 @@ Propaga-se como campo `location` no Service Registry. Cobre os 4 aspetos
 pedidos no slide 7:
 - **Localização física/lógica:** país→região→datacenter→rack→node
 - **Delegação geográfica:** campos independentes por nível
-- **Monitorização por localização / bónus de largura de banda:**
-  [TODO: Zabbix proxy por site — descrever a arquitetura de 2 sites
-  discutida]
+- **Monitorização por localização / bónus de largura de banda:** uma
+  arquitetura de agregação por site (proxy Zabbix por região, com
+  recolha local e envio agregado) foi desenhada e discutida como forma
+  de cumprir este requisito-bónus, mas não chegou a ser implementada
+  nesta entrega — o agente Zabbix usado (Secção 3.4) liga diretamente
+  ao server através do NAT existente, sem agregação intermédia. Fica
+  identificado como trabalho não concluído, não como requisito ignorado.
 - **Localização rápida da origem de um incidente:** o `instance_id` é a
   chave de correlação partilhada entre o registry, os logs e o SIEM
 
@@ -179,9 +183,26 @@ pedidos no slide 7:
 
 ### 3.4 Integração com monitorização/SIEM
 
-[TODO: Zabbix proxy no site Incus (modo ativo, devido ao NAT) +
-agente Wazuh nos nós k3s → Wazuh manager; correlação FCAPS↔segurança via
-envio dos alertas do Zabbix para o Wazuh]
+A recolha de monitorização e segurança assenta em dois agentes
+independentes, ambos instalados no nó `k3s-master` e a comunicar com os
+respetivos servidores (Zabbix, Wazuh) através da mesma rota NAT já usada
+para o tráfego de ataque das PoCs (Secção 3.3):
+
+- **Zabbix agent2**, em modo ativo (`ServerActive`), com itens do tipo
+  `Zabbix agent (active)` que leem ficheiros de log gerados localmente
+  (`log[]`) a partir do stream contínuo de `kubectl logs -f` de cada
+  serviço relevante (`registry-stream.log`, `ingestion-stream.log`),
+  geridos como serviços `systemd` dedicados.
+- **Agente Wazuh**, ligado ao manager em `10.255.255.76:1514/tcp`, a
+  monitorizar os mesmos ficheiros de log (`<localfile>`), com regras
+  locais (`etc/rules/local_rules.xml`) e active-response associado por
+  regra.
+
+Não foi usado um proxy Zabbix intermédio (ver nota de bónus não
+implementado em 3.2); a correlação FCAPS↔segurança foi obtida fazendo
+disparar, para a mesma janela temporal, um sinal Zabbix (operacional) e
+um sinal Wazuh (segurança) a partir da mesma fonte de log — confirmado
+empiricamente para as Ameaças 1 e 2 (Secções 5.1.1 e 5.2.1).
 
 ---
 
@@ -223,6 +244,18 @@ cluster — uma barreira adicional confirmada empiricamente durante a PoC
 da Ameaça 3 (Secção 5.3), que reduz o conjunto de atacantes realistas
 àqueles com execução de código dentro da rede overlay do cluster.
 
+**Catálogo de vulnerabilidades e riscos referenciados ao longo do
+relatório:**
+
+| ID | Camada | Descrição |
+|---|---|---|
+| V1 | Aplicação | Registo não autenticado de instância maliciosa em `POST /register` (`registry.py`) |
+| V2 | Aplicação | Remoção não autenticada de todas as instâncias via `DELETE /unregister` sem `instance_id` |
+| I2 | Orquestração | IP do pod Storage divulgado por `GET /services`, anulando o isolamento pretendido do `ClusterIP` |
+| I3 | Rede/Infraestrutura | SNAT por omissão nos NodePorts (`externalTrafficPolicy: Cluster`) mascara o IP de origem real nos logs da aplicação |
+| I5 | Orquestração | Limites de CPU reduzidos (250m) partilhados entre pods do namespace `ssle`, que amplificam o impacto de carga repetida |
+| R3 | Deteção/Resposta | O mecanismo de active-response pode, por si só, tornar-se um vetor de self-DoS: falha silenciosa do `firewall-drop` nativo por ausência de `srcip` extraível (5.1.1), e disparo sobre tráfego legítimo quando a regra de deteção não distingue origem (5.1.2) |
+
 ### 4.2 Attack and Defense Trees
 
 Metodologia: notação de Kordy et al. (Lesson04, slides 21-25) — nós de
@@ -233,9 +266,26 @@ export do attacktree.online (Anexo C/D).
 
 ### 4.3 Large-scale system monitoring
 
-[TODO: como o esquema de naming (3.2) e a correlação Zabbix/Wazuh
-suportam deteção e root-cause analysis à escala — referir Alertmanager
-inhibit rules / trigger dependencies]
+O esquema de naming hierárquico (Secção 3.2) é a chave de correlação
+partilhada entre as três fontes de dados do sistema: o campo
+`instance_id`/`location` tal como declarado no Service Registry, o
+nome do host monitorizado no Zabbix (`ssle-k3s-cluster`) e o campo
+`agent.name` nos eventos do Wazuh. Isto permite, em princípio, localizar
+rapidamente a origem de um incidente a partir de qualquer uma das três
+fontes — um alerta de segurança no Wazuh aponta para o mesmo
+`k3s-master`/nó que o item correspondente no Zabbix.
+
+Na prática, a análise de causa raiz à escala fica demonstrada, não por
+um motor de correlação central (como as `inhibit rules` do Alertmanager
+do Prometheus, não usado neste projeto), mas pela correlação temporal
+direta entre os dois sistemas: para as Ameaças 1 e 2, o mesmo evento de
+origem (um `POST /register` malicioso, um pico de `POST /ingest`) é
+detetado de forma independente pelo Zabbix (sinal operacional) e pelo
+Wazuh (sinal de segurança) dentro da mesma janela de poucos segundos
+(Secções 5.1.1, 5.2.1) — suficiente, a esta escala de demonstração, para
+confirmar a causa de um incidente sem ambiguidade, mas que não escalaria
+sem um mecanismo de correlação automática dedicado para um número maior
+de nós/sites (limitação documentada na Secção 7).
 
 ### 4.4 Priorização de mitigação
 
@@ -258,10 +308,17 @@ para mitigações de maior esforço como mTLS ou credenciais por dispositivo.
 
 ## 5. Approach to Three Threats Considered in the Course Syllabus
 
-Ameaças escolhidas: **Route and signals hijacking**, **Massive
-denial-of-service disruptions**, **Botnets** (combinado com fraude de
-dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
-6 pontos pedidos no slide 12 ("Discussion of results").
+Ameaças escolhidas, confirmadas com o docente: **Route and signals
+hijacking**, **Massive denial-of-service disruptions**, **Botnets**
+(combinado com Fraud and social attacks/Reputation Systems). A
+combinação dos três últimos itens do syllabus numa só ameaça
+justifica-se pela arquitetura do sistema: o mesmo vetor de exploração
+(escrita direta e não autenticada no Storage, Secção 5.3) serve em
+simultâneo para simular uma frota forjada de dispositivos (Botnets),
+falsificar a reputação/confiabilidade dos dados reportados por
+`device_id` (Reputation Systems) e envenenar os outputs analíticos
+consumidos a jusante (Fraud). Para cada ameaça, a estrutura segue
+exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
 
 ### 5.1 Ameaça 1 — Route/Signals Hijacking
 
@@ -320,9 +377,9 @@ dados/Reputation Systems). Para cada uma, a estrutura segue exatamente os
   - Alert on registration anomalies (Configuration, Medium effort,
     Detective): monitor for registration overwrites or location fields
     inconsistent with known deployment regions.
-  - [TODO: métricas concretas do Zabbix/Wazuh após ligação — taxa de
-    `POST /register`/`DELETE /unregister`, cardinalidade de
-    `instance_id` por serviço]
+  - Métricas concretas de deteção (taxa de `POST /register` suspeitos,
+    distinção entre nós legítimos e desconhecidos) implementadas e
+    confirmadas em produção — ver Secção 5.1.1.
 
 - **Action-response adopted:**
   PoC executada com um contentor Incus dedicado (`attacker`,
@@ -615,7 +672,8 @@ deveria resolver com um endpoint de remoção seletiva.
     Medium effort, Detective): request-rate spikes on `/ingest` e
     `/anomalies`, latência do registry, taxa de 5xx, duração de queries
     SQLite.
-  - [TODO: métricas concretas após ligação do Zabbix/Wazuh]
+  - Métricas concretas implementadas e confirmadas: taxa de pedidos
+    (Zabbix) e frequência de eventos (Wazuh) — ver Secção 5.2.1.
 
 - **Action-response adopted:**
   PoC executada a partir do contentor `attacker` (10.255.255.184), com
@@ -683,6 +741,128 @@ deveria resolver com um endpoint de remoção seletiva.
     `evidencia/poc2-pods-apos-recuperacao.txt`,
     `evidencia/poc2-health-recuperado.txt`
 
+#### 5.2.1 Detection and Active-Response (Phase 4)
+
+Ao contrário da Ameaça 1 (deteção por padrão de conteúdo), o sinal
+relevante aqui é **volume/taxa** — pelo que a deteção foi implementada em
+**duas camadas complementares**, demonstrando explicitamente a ponte
+FCAPS↔segurança referida na Secção 2.2/4.3: Zabbix do lado da métrica
+operacional (taxa de pedidos), Wazuh do lado da confirmação de segurança
+(regra de frequência).
+
+**Pipeline de deteção:**
+```
+ingestion (2 réplicas) → kubectl logs -f -l app=ingestion
+  (systemd: ssle-ingestion-stream) → /var/log/ingestion-stream.log
+  ├→ agente Wazuh → manager → regras 100200/100201 (frequency/timeframe)
+  └→ agente Zabbix (active, log[]) → item "Ingestion: request rate"
+       → trigger count(...,10s)>20
+```
+
+**Lado Wazuh — regras por frequência:**
+```xml
+<group name="ssle,ddos,">
+  <rule id="100200" level="3">
+    <if_sid>1</if_sid>
+    <match type="pcre2">POST /ingest</match>
+    <description>SSLE: pedido individual a /ingest</description>
+    <group>ssle_ddos,</group>
+  </rule>
+  <rule id="100201" level="12" frequency="30" timeframe="10">
+    <if_matched_sid>100200</if_matched_sid>
+    <description>SSLE: possível DDoS — volume anómalo de pedidos a /ingest</description>
+    <group>ssle_ddos,</group>
+  </rule>
+</group>
+```
+
+A regra `100200` (nível baixo) casa com cada pedido individual; a regra
+`100201` dispara apenas quando a `100200` ocorre 30 vezes numa janela de
+10 segundos — o padrão standard do Wazuh para deteção de volume, mais
+robusto do que tentar detetar DDoS por correspondência de conteúdo.
+
+**Lado Zabbix — item e trigger de taxa de pedidos:**
+```
+Item:    log[/var/log/ingestion-stream.log,"POST \/ingest",,,skip]
+Trigger: count(/ssle-k3s-cluster/log[...],10s)>20
+```
+
+**Achado técnico — tentativa falhada de métrica de CPU:** a primeira
+abordagem para o sinal Zabbix usou CPU do pod (`kubectl top pods`, via
+`UserParameter`), com um trigger `>15` millicores. O flood de 50 pedidos
+em paralelo, mesmo repetido de forma sustida (10 rajadas de 20 pedidos),
+não produziu qualquer variação de CPU mensurável (3m→3m): a aplicação
+Flask é demasiado leve e o `metrics-server` do Kubernetes tem o seu
+próprio ciclo de amostragem, independente e mais lento do que o
+necessário para captar rajadas curtas. **Esta tentativa falhada motivou
+a escolha de um sinal baseado em taxa de pedidos (log-based) em vez de
+utilização de recursos** — uma decisão de design documentada, não
+escondida, que reforça que a observabilidade de FCAPS tradicional
+(métricas de recursos) não é necessariamente o sinal mais adequado para
+detetar ataques aplicacionais de curta duração; taxa de eventos é mais
+sensível neste contexto.
+
+**Achado relevante — confirmação empírica do SNAT (I3):** os IPs de
+origem capturados nos logs durante o flood foram `10.42.0.0`/`10.42.0.1`
+(endereços internos da rede overlay/gateway do flannel), não o IP real
+do contentor atacante (`10.255.255.184`). Isto confirma concretamente,
+com dados reais e não apenas por inspeção dos manifestos, o risco I3 já
+identificado na análise de superfície de ataque: o `externalTrafficPolicy`
+por omissão dos NodePorts mascara a origem real do tráfego nos logs da
+aplicação, motivando a escolha de uma resposta por rate-limit no destino
+em vez de bloqueio do atacante na origem (ver abaixo).
+
+**Deteção confirmada em produção, nas duas camadas:** reexecutado o
+flood da PoC, ambos os sistemas dispararam na mesma janela temporal:
+```
+Wazuh:   Rule: 100201 (level 12) -> 'SSLE: possível DDoS — volume anómalo de pedidos a /ingest'
+Zabbix:  Trigger "Ingestion: request rate" -> PROBLEM (count(...,10s)>20)
+```
+
+**Active-response — rate-limit no destino:** dado que o IP de origem não
+é fiável (achado acima), a resposta implementada não tenta bloquear o
+atacante — aplica um limite de taxa diretamente no NodePort do destino
+(`30001`, ingestion), via um pequeno serviço HTTP (`responder.py`, porta
+9100) no nó do cluster, chamado pelo active-response do Wazuh:
+
+```bash
+# active-response (Wazuh, location=server)
+curl -s -m 5 -X POST "http://10.255.255.42:9100/add" -d "{}"
+```
+
+```python
+# responder.py, no nó do cluster (k3s-master)
+iptables -I INPUT -p tcp --dport 30001 -m limit --limit 10/second -j ACCEPT
+iptables -A INPUT -p tcp --dport 30001 -j DROP
+```
+
+Associado à regra via:
+```xml
+<active-response>
+  <command>throttle-ingest</command>
+  <location>server</location>
+  <rules_id>100201</rules_id>
+  <timeout>60</timeout>
+</active-response>
+```
+
+**Confirmado em teste real:** o disparo do flood gerou, sem qualquer
+intervenção manual, a aplicação automática das regras de `iptables`:
+```
+Chain INPUT
+ACCEPT  tcp  --  0.0.0.0/0  0.0.0.0/0  tcp dpt:30001  limit: avg 10/sec burst 5
+DROP    tcp  --  0.0.0.0/0  0.0.0.0/0  tcp dpt:30001
+```
+
+**Nota técnica:** tal como na Ameaça 1, `<location>local</location>`
+não produziu execução alguma; a correção foi `<location>server</location>`.
+
+**Limitação documentada:** o rate-limit aplica-se a **todo** o tráfego
+para o NodePort 30001, incluindo o sensor legítimo, durante a janela de
+`timeout` (60s) — uma mitigação de disponibilidade parcial e temporária,
+não uma resolução cirúrgica do ataque (coerente com o facto de o IP de
+origem real não poder ser isolado, achado acima).
+
 ### 5.3 Ameaça 3 — Botnets / Data Fraud
 
 - **Description of the threat:**
@@ -744,7 +924,9 @@ deveria resolver com um endpoint de remoção seletiva.
   - Anomaly scoring on `device_id` cardinality (Configuration, Medium
     effort, Detective): deteção de picos de `device_id` distintos por
     janela temporal, sinal de frota de sensores forjada.
-  - [TODO: métricas concretas após ligação do Zabbix/Wazuh]
+  - [TODO: implementar deteção (Zabbix/Wazuh) e action-response para
+    esta ameaça, seguindo o padrão já validado em 5.1.1/5.2.1 —
+    pendente, ver Secção 4.4 para a priorização]
 
 - **Action-response adopted:**
   PoC executada em duas fases, com um refinamento de rede descoberto a
