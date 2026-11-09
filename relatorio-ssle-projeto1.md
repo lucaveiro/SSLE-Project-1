@@ -231,7 +231,8 @@ reachability de rede, sem qualquer `NetworkPolicy` a restringir o tráfego
 interno entre pods no namespace `ssle`. O `storage`, embora configurado
 como `ClusterIP` — pensado para só ser alcançável de dentro do cluster —
 tem o seu IP de pod divulgado publicamente via `GET /services` do
-registry, anulando na prática essa barreira (I2).
+registry, anulando na prática essa barreira — confirmado na PoC da
+Ameaça 3 (Secção 5.3).
 
 **Camada de rede/infraestrutura:** duas fronteiras de NAT separam o
 atacante do sistema consoante o ponto de partida: a bridge Incus
@@ -244,17 +245,30 @@ cluster — uma barreira adicional confirmada empiricamente durante a PoC
 da Ameaça 3 (Secção 5.3), que reduz o conjunto de atacantes realistas
 àqueles com execução de código dentro da rede overlay do cluster.
 
-**Catálogo de vulnerabilidades e riscos referenciados ao longo do
-relatório:**
+Para além das duas vulnerabilidades já descritas acima — o registo e a
+remoção não autenticados no Service Registry, e a divulgação do IP do
+pod do Storage via `GET /services` — duas outras merecem destaque, por
+serem confirmadas empiricamente nas PoCs da Secção 5 e não apenas
+inferidas da leitura do código.
 
-| ID | Camada | Descrição |
-|---|---|---|
-| V1 | Aplicação | Registo não autenticado de instância maliciosa em `POST /register` (`registry.py`) |
-| V2 | Aplicação | Remoção não autenticada de todas as instâncias via `DELETE /unregister` sem `instance_id` |
-| I2 | Orquestração | IP do pod Storage divulgado por `GET /services`, anulando o isolamento pretendido do `ClusterIP` |
-| I3 | Rede/Infraestrutura | SNAT por omissão nos NodePorts (`externalTrafficPolicy: Cluster`) mascara o IP de origem real nos logs da aplicação |
-| I5 | Orquestração | Limites de CPU reduzidos (250m) partilhados entre pods do namespace `ssle`, que amplificam o impacto de carga repetida |
-| R3 | Deteção/Resposta | O mecanismo de active-response pode, por si só, tornar-se um vetor de self-DoS: falha silenciosa do `firewall-drop` nativo por ausência de `srcip` extraível (5.1.1), e disparo sobre tráfego legítimo quando a regra de deteção não distingue origem (5.1.2) |
+Os limites de CPU reduzidos impostos a cada pod (250m, Secção 3.3),
+partilhados entre todos os serviços do namespace `ssle`, amplificam o
+impacto de qualquer carga repetida: a PoC da Secção 5.2 mostrou que a
+mesma sequência de pedidos produz taxas de falha muito diferentes
+(5.5% a 76.5%) consoante o estado de saturação prévio do sistema — o
+limite de recursos, pensado para conter o blast radius de um pod isolado,
+acaba por tornar o sistema mais sensível a ataques repetidos, não menos.
+
+Por fim, o mecanismo de resposta automática (active-response) pode, ele
+próprio, tornar-se um vetor de indisponibilidade: a Secção 5.1.1 mostra
+o `firewall-drop` nativo do Wazuh a falhar silenciosamente por o
+formato de log da aplicação não expor um endereço IP extraível, e a
+Secção 5.1.2 mostra uma versão inicial da regra de deteção a disparar
+sobre tráfego legítimo (heartbeats normais do Storage), gerando um
+`DELETE /unregister` automático sobre o próprio sistema a cada 15
+segundos — um caso real e medido de autodenegação de serviço causada
+pela própria camada de defesa, só corrigido depois de a regra passar a
+distinguir a origem do registo.
 
 ### 4.2 Attack and Defense Trees
 
@@ -363,7 +377,7 @@ exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
   - ADTree: `adtrees-ssle-projeto1.md`, árvore 1 (disjunctive refinement —
     qualquer um dos 3 paths é suficiente)
 
-![ADTree 1 — Service Registry](<images/addtree1-Service Registry Hijack.png>)
+![ADTree 1 — Service Registry](<images/adtree1-Service Registry Hijack.png>)
 
 - **Relevant monitoring/mitigation actions/metrics:**
   - Require mutual TLS and identity-bound registration (Development, High
@@ -402,7 +416,8 @@ exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
   → 200 OK
   ```
   Nenhuma validação de identidade foi exigida pelo registry, confirmando
-  V1. O round-robin de `get_service()` passou de imediato a alternar entre
+  a ausência total de autenticação no registo. O round-robin de
+  `get_service()` passou de imediato a alternar entre
   a instância real e a falsa (confirmado em 6 pedidos consecutivos, ver
   evidência `poc1-roundrobin-alternancia.txt`).
 
@@ -412,7 +427,8 @@ exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
   → 200 OK {"message":"unregistered"}
   ```
   Um único pedido não autenticado removeu simultaneamente a instância
-  real **e** a falsa, confirmando V2. O sistema demonstrou o
+  real **e** a falsa, confirmando que o endpoint de remoção não
+  distingue identidade nem exige confirmação. O sistema demonstrou o
   comportamento de autorrecuperação previsto: a instância real
   reapareceu via heartbeat (`registered_at` passou para o instante do
   próximo re-registo, ~15s depois do `unregister`), mas a instância
@@ -526,9 +542,10 @@ declarado pelo próprio cliente). O resultado é uma falha silenciosa: o
 active-response é acionado, mas não produz qualquer efeito de contenção.
 
 Este resultado **confirma empiricamente, com dados reais e não apenas
-teoricamente, o risco R3 já identificado na análise de superfície de
-ataque (Secção 4.1)** — "active response abusável/self-DoS" — estendido
-aqui a uma nova dimensão: nem é necessário um atacante induzir o bloqueio
+teoricamente, o risco já identificado na análise de superfície de ataque
+(Secção 4.1) de o próprio mecanismo de active-response se tornar um
+vetor de indisponibilidade**, estendido aqui a uma nova dimensão: nem é
+necessário um atacante induzir o bloqueio
 de um alvo errado para o active-response ser ineficaz; a simples ausência
 de um campo de IP extraível no pipeline de logs é suficiente para o
 tornar inoperante por omissão. A Secção 5.1.2 documenta a correção
@@ -577,8 +594,9 @@ origem) disparava também para os heartbeats legítimos do storage real
 acionando o active-response em loop contínuo — o sistema estava, na
 prática, a executar `DELETE /unregister` sobre si próprio a cada
 heartbeat, um caso real e medido de **self-inflicted DoS por
-active-response mal calibrado**, confirmando concretamente o risco R3 já
-identificado na análise de superfície de ataque. A correção introduziu
+active-response mal calibrado**, confirmando concretamente o risco de
+autodenegação de serviço por resposta automática já identificado na
+análise de superfície de ataque (Secção 4.1). A correção introduziu
 uma segunda regra, mais específica e de nível baixo, que intercepta
 registos de nós conhecidos antes da regra genérica disparar:
 
@@ -701,7 +719,7 @@ deveria resolver com um endpoint de remoção seletiva.
   pedidos isoladamente — foi a **repetição e proximidade temporal** dos
   testes que produziu a degradação mais severa (execução 3), sugerindo
   um efeito cumulativo sobre os limites de CPU (250m) partilhados pelos
-  pods do namespace `ssle`, consistente com I5. Após ~30s sem carga, o
+  pods do namespace `ssle`, já discutido na Secção 4.1. Após ~30s sem carga, o
   sistema recuperou (`GET /health` voltou a responder 200), confirmando
   que a degradação foi temporária e não um colapso permanente.
 
@@ -802,12 +820,12 @@ escondida, que reforça que a observabilidade de FCAPS tradicional
 detetar ataques aplicacionais de curta duração; taxa de eventos é mais
 sensível neste contexto.
 
-**Achado relevante — confirmação empírica do SNAT (I3):** os IPs de
+**Achado relevante — confirmação empírica do SNAT:** os IPs de
 origem capturados nos logs durante o flood foram `10.42.0.0`/`10.42.0.1`
 (endereços internos da rede overlay/gateway do flannel), não o IP real
 do contentor atacante (`10.255.255.184`). Isto confirma concretamente,
-com dados reais e não apenas por inspeção dos manifestos, o risco I3 já
-identificado na análise de superfície de ataque: o `externalTrafficPolicy`
+com dados reais e não apenas por inspeção dos manifestos, o risco já
+identificado na análise de superfície de ataque (Secção 4.1): o `externalTrafficPolicy`
 por omissão dos NodePorts mascara a origem real do tráfego nos logs da
 aplicação, motivando a escolha de uma resposta por rate-limit no destino
 em vez de bloqueio do atacante na origem (ver abaixo).
@@ -924,9 +942,8 @@ origem real não poder ser isolado, achado acima).
   - Anomaly scoring on `device_id` cardinality (Configuration, Medium
     effort, Detective): deteção de picos de `device_id` distintos por
     janela temporal, sinal de frota de sensores forjada.
-  - [TODO: implementar deteção (Zabbix/Wazuh) e action-response para
-    esta ameaça, seguindo o padrão já validado em 5.1.1/5.2.1 —
-    pendente, ver Secção 4.4 para a priorização]
+  - Deteção e resposta automática implementadas e confirmadas em
+    produção — ver Secção 5.3.1.
 
 - **Action-response adopted:**
   PoC executada em duas fases, com um refinamento de rede descoberto a
@@ -947,7 +964,7 @@ origem real não poder ser isolado, achado acima).
   partir da VM Debian e `000` a partir do `attacker`. O `POST /store`
   só foi bem-sucedido quando executado **a partir de dentro de um nó do
   cluster** (`k3s-master`). Isto refina o modelo de ameaça original:
-  explorar I2 exige que o atacante tenha execução de código dentro da
+  explorar esta divulgação de endereço interno exige que o atacante tenha execução de código dentro da
   rede overlay do cluster (ex: um pod comprometido, ou acesso a um nó),
   não apenas presença genérica no mesmo site Incus — uma barreira
   adicional não capturada na ADTree inicial, mas que não invalida a
@@ -1004,13 +1021,217 @@ origem real não poder ser isolado, achado acima).
     `evidencia/poc3-average-after-botnet.json`,
     `evidencia/poc3-anomalies-wide-window.json`
 
+#### 5.3.1 Detection and Active-Response (Phase 4)
+
+Ao contrário das Ameaças 1 e 2, não existe no código da aplicação um
+registo textual do conteúdo malicioso em si (o `storage.py` não escreve
+nenhuma linha de log sobre o `device_id`/`temperature` recebidos) —
+pelo que a deteção teve de ser construída sobre o **sintoma observável
+externamente**, não sobre a causa. A validação de gama física
+(`-50..150`) é exatamente a verificação que o `ingestion.py` aplica e
+que este ataque contorna; um poller dedicado reaplica essa mesma
+verificação sobre o resultado agregado do `analytics-service`.
+
+Tal como nas Ameaças 1 e 2, a deteção foi implementada em duas camadas
+complementares a partir da mesma fonte de log, mantendo a ponte
+FCAPS↔segurança consistente ao longo das três ameaças: Zabbix do lado
+do sinal observável (presença de uma anomalia na janela recente), Wazuh
+do lado da confirmação de segurança com resposta associada.
+
+**Pipeline de deteção:**
+```
+poller (systemd: ssle-analytics-poll, a cada 5s)
+  → GET /average → check_analytics.py (valida -50..150)
+  → /var/log/analytics-poll.log
+  ├→ agente Wazuh → manager → regra local 100300
+  └→ agente Zabbix (active, log[]) → item "Analytics: fraud anomaly
+       detected" → trigger find(...,300,"iregexp","ANOMALY")=1
+```
+
+```python
+# check_analytics.py
+if mx > 150 or mx < -50:
+    print(f"[ANOMALY] temperature out of physical range: max={mx} avg={avg}")
+else:
+    print(f"[CHECK] max={mx} avg={avg}")
+```
+
+```xml
+<group name="ssle,fraud,">
+  <rule id="100300" level="12">
+    <if_sid>1</if_sid>
+    <match type="pcre2">\[ANOMALY\]</match>
+    <description>SSLE: valor de temperatura fora da gama física válida (possível fraude de dados)</description>
+    <group>ssle_fraud,</group>
+  </rule>
+</group>
+```
+
+**Deteção confirmada em produção, nas duas camadas:** reexecutada a
+escrita direta com um valor fisicamente impossível, ambos os sistemas
+dispararam a partir do mesmo evento:
+```
+Wazuh:   Rule: 100300 (level 12) -> 'SSLE: valor de temperatura fora da gama física válida (possível fraude de dados)'
+         [ANOMALY] temperature out of physical range: max=888.0 avg=33.76
+Zabbix:  Trigger "Possível fraude de dados — valor fora da gama física" -> PROBLEM
+```
+
+Com isto, as três ameaças ficam com a correlação Zabbix↔Wazuh
+confirmada empiricamente (Secções 5.1.1, 5.2.1, 5.3.1), cumprindo de
+forma consistente o requisito de ponte FCAPS↔segurança (Secção 4.3)
+para a totalidade do âmbito do projeto, não apenas como demonstração
+pontual.
+
+**Active-response:** dado que não existe, do lado da aplicação, um
+mecanismo de remoção seletiva de um registo forjado (o `storage.py` não
+expõe nenhum endpoint de eliminação), e que a origem real do pedido não
+é rastreável de forma fiável pelas mesmas razões já documentadas nas
+Ameaças 1 e 2 (SNAT, ausência de `srcip` extraível), a resposta
+implementada não tenta bloquear rede nem reverter o dado — regista o
+incidente de forma persistente e consultável, como primeiro passo de um
+fluxo de resposta manual/auditoria:
+```bash
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) FRAUD_DETECTED" >> /var/ossec/etc/lists/ssle-fraud-quarantine.log
+```
+
+**Confirmado em teste real**, com disparo sustido durante toda a janela
+em que o valor forjado permaneceu presente nas 100 leituras mais
+recentes (mais de 4 minutos consecutivos, com um evento a cada ~5-6s,
+coerente com o ciclo do poller):
+```
+2026-11-07T16:12:32Z FRAUD_DETECTED - active-response triggered, rule 100300
+...
+2026-11-07T16:16:30Z FRAUD_DETECTED - active-response triggered, rule 100300
+```
+
+**Limitação documentada — resposta duplicada sem remediação real:** o
+active-response disparou repetidamente (dezenas de vezes) para o
+**mesmo** incidente não resolvido, em vez de disparar uma vez e aplicar
+uma mitigação persistente — um padrão que se repete das Ameaças 1 e 2
+(detetar continua a ser mais maduro do que responder, nesta
+implementação). Isto contrasta com o comportamento observado na PoC
+original da Secção 5.3, onde o mesmo valor forjado acabou por
+desaparecer da janela de 100 registos ao fim de ~2h, diluído pelo
+tráfego legítimo do sensor — aqui, com apenas um dispositivo legítimo
+ativo, a janela de exposição do dado fraudulento foi suficientemente
+longa para o poller o detetar e reportar de forma sustida antes de ser
+expulso da janela, evidenciando que a janela de deteção útil depende
+diretamente do volume de tráfego legítimo concorrente, uma variável que
+um atacante também poderia manipular (inundando o sistema com leituras
+legítimas forjadas para acelerar a diluição de uma leitura maliciosa
+específica).
+
+**Resposta de auditoria vs. resposta de remediação — distinção
+confirmada entre as três ameaças:** ao contrário das Ameaças 1 e 2, onde
+o active-response altera de facto a condição medida (o `DELETE
+/unregister` remove a entrada maliciosa, o rate-limit reduz o volume
+aceite), aqui o script apenas regista o incidente, sem qualquer
+capacidade de remediação — por não existir, na aplicação, um endpoint
+de eliminação seletiva no Storage. Na prática, isto significa que o
+estado de "problema" no Zabbix (Secção 5.3.1) **não se resolve por
+efeito do active-response**: mantém-se ativo até o valor forjado sair
+naturalmente da janela de 100 leituras mais recentes do Storage, pelo
+mesmo mecanismo de diluição documentado na PoC original — com ou sem
+a resposta do Wazuh a correr. Esta é uma limitação relevante a reportar:
+das três respostas implementadas, apenas duas (Ameaças 1 e 2) resolvem
+a causa do alerta; a terceira (Ameaça 3) só o documenta, deixando a
+remediação efetiva — por exemplo, um endpoint `DELETE /temperatures/<id>`
+no Storage — como trabalho futuro.
+
 ---
 
 ## 6. Evaluation of the Solution's Approaches and Scalability
 
-[TODO: testes de carga, cardinalidade de séries no Zabbix/Wazuh, EPS do
-SIEM, latência de scrape/ingestão vs. número de nós/réplicas; comparação
-do comportamento do sistema com e sem as mitigações implementadas]
+### 6.1 Escalabilidade horizontal da aplicação
+
+Para avaliar se a arquitetura escala da forma esperada pelo slide 3 do
+enunciado, repetiu-se o flood da Secção 5.2 (200 pedidos a `/ingest`,
+20 em paralelo) com 2 réplicas de `ingestion`, depois escalou-se para 4
+réplicas (`kubectl scale deploy ingestion --replicas=4`) e repetiu-se o
+mesmo teste:
+
+| Réplicas de `ingestion` | Falhas (502) em 200 pedidos | Taxa |
+|---|---|---|
+| 2 | 0 | 0% |
+| 4 | 2 | 1% |
+
+**Resultado contraintuitivo, mas explicável:** duplicar as réplicas do
+`ingestion` não melhorou a resiliência — piorou-a ligeiramente. Isto
+confirma empiricamente um argumento já feito na Secção 7: o gargalo real
+do sistema não é o `ingestion` (que já tinha 2 réplicas e escala sem
+dificuldade), mas o **Service Registry**, que permanece com uma única
+réplica e estado em memória (Secção 3.3). Cada réplica adicional de
+`ingestion` gera mais tráfego de heartbeat e `discover()` sobre esse
+mesmo Registry partilhado, aumentando a contenção sobre o componente que
+já era o ponto único de falha identificado na análise de superfície de
+ataque (Secção 4.1), sem qualquer ganho de throughput no caminho
+crítico. **A conclusão prática é que escalar o componente errado da
+arquitetura pode degradar, em vez de melhorar, a resiliência global** —
+só escalar o Registry (fora do âmbito deste projeto, remetido para o
+Projeto 2) resolveria a causa raiz.
+
+### 6.2 Throughput e capacidade do SIEM
+
+**Wazuh:** ao longo da sessão de testes (~17h51m, incluindo longos
+períodos de inatividade entre PoCs), foram processados `events_received
+= 13429`, `events_processed = 12983`, com **`events_dropped = 0`** —
+nenhum evento foi descartado por sobrecarga, mesmo durante os floods
+concentrados da Secção 5.2. Das regras específicas deste projeto
+(IDs 100100–100300), foram gerados 4397 eventos no total. O throughput
+médio ao longo de toda a sessão (0.068 eventos/s) não é representativo
+da capacidade real, por incluir longos períodos sem tráfego; o
+indicador mais relevante é `events_dropped = 0` sob os picos de carga
+efetivamente testados (até 200 pedidos em paralelo), que confirma que o
+pipeline de deteção acompanhou a carga gerada nesta escala sem perdas.
+
+**Zabbix:** o painel *System information* reporta `Required server
+performance: 3.26 new values per second`, com 145 items ativos (136
+enabled) e 81 triggers (6 em estado "problem" no momento da captura,
+refletindo testes em curso). Este valor está muito abaixo de qualquer
+limite de capacidade típico de uma instalação Zabbix de referência
+(tipicamente milhares de NVPS), confirmando que a arquitetura de
+monitorização implementada tem margem considerável antes de se tornar
+ela própria um gargalo — mas também que **os testes realizados não
+chegaram perto de validar esse limite**, apenas confirmam o
+funcionamento correto à escala reduzida deste laboratório.
+
+### 6.3 Latência de deteção
+
+A latência de deteção não foi medida com instrumentação dedicada
+(cronómetro automático entre o pedido malicioso e o alerta), mas é
+limitada, por desenho, pelos intervalos de verificação configurados:
+
+| Ameaça | Mecanismo | Latência máxima teórica |
+|---|---|---|
+| 1 — Hijacking | `log[]` ativo, `Update interval: 10s` | ≤10s |
+| 2 — DDoS | Regra `frequency=30, timeframe=10` (Wazuh, quase imediato); `log[]`, `Update interval: 2s` (Zabbix) | ≤10s (Wazuh), ≤2s (Zabbix) |
+| 3 — Fraude | Poller a cada 5s + `log[]`, `Update interval: 2s` | ≤7s |
+
+Em todos os casos observados nas Secções 5.1.1, 5.2.1 e 5.3.1, o alerta
+apareceu dentro da janela de poucos segundos usada nos testes (`sleep
+8`–`sleep 10`), consistente com estes limites teóricos. Não foi testada
+a latência sob carga elevada e sustentada (ex: milhares de eventos/s),
+pelo que esta conclusão vale apenas para a escala testada.
+
+### 6.4 Limitações da avaliação de escalabilidade
+
+Por restrição de tempo e de recursos computacionais do laboratório, os
+seguintes aspetos ficam fora do âmbito desta avaliação e são assumidos
+como limitação, não como resultado:
+
+- **Cardinalidade de séries temporais** sob um número elevado de
+  dispositivos/instâncias (testado apenas até ~16 `device_id`
+  simultâneos na Secção 5.3) não foi avaliada ao ponto de observar
+  degradação.
+- **Escalabilidade do próprio Registry e do Storage** (as componentes
+  identificadas como SPOF em 6.1 e 7) não foi testada por não ter sido
+  implementada réplica adicional — fica como trabalho direto para o
+  Projeto 2.
+- **Throughput sustentado do SIEM** foi validado apenas para picos
+  curtos (dezenas de segundos), não para carga contínua ao longo de
+  horas, que é o cenário em que a capacidade de 3.26 NVPS do Zabbix ou
+  os limites internos do `wazuh-analysisd` poderiam efetivamente ser
+  testados.
 
 ---
 
