@@ -17,12 +17,12 @@ Este relatório documenta o desenho, implementação e análise de segurança
 de uma arquitetura SOA de pequena escala — um pipeline de ingestão,
 armazenamento e análise de dados de sensores — construída sobre os Guiões
 1 e 2 da disciplina e empacotada num cluster Kubernetes (k3s) dentro de
-contentores Incus. O objetivo do Projeto 1 é duplo: (i) desenhar e correr
+contentores Incus. O objetivo do Projeto 1 é desenhar e correr
 uma arquitetura orientada a serviços capaz de escalar, com um esquema de
 identificação e localização hierárquico adequado a ambientes de larga
-escala; e (ii) analisar, explorar na prática e propor mitigação para três
-ameaças do syllabus da cadeira — route/signals hijacking, denial-of-service
-massivo, e botnets/fraude de dados — completando o ciclo exploração →
+escala, analisar, explorar na prática e propor mitigação para três
+ameaças route/signals hijacking, denial-of-service
+massivo, e botnets/fraude de dados completando o ciclo exploração →
 deteção → resposta → post-mortem para cada uma.
 
 O relatório está organizado da seguinte forma: a Secção 2 enquadra os
@@ -33,10 +33,7 @@ risco, incluindo a superfície de ataque e as três ADTrees construídas; a
 Secção 5 detalha, para cada uma das três ameaças escolhidas, a sua
 exploração prática (prova de conceito), deteção e resposta; a Secção 6
 avalia a escalabilidade da solução; e a Secção 7 fecha com as principais
-conclusões e limitações identificadas. Este é o Projeto 1 de um conjunto
-de dois: o foco aqui está na deteção e prevenção de ameaças, enquanto o
-Projeto 2, subsequente, reutilizará esta mesma arquitetura para abordar
-tolerância a ataques.
+conclusões e limitações identificadas.
 
 ---
 
@@ -54,10 +51,10 @@ Secção 4.
 Uma arquitetura orientada a serviços (SOA) decompõe um sistema num
 conjunto de serviços independentes, fracamente acoplados (*loose
 coupling*), que comunicam através de contratos bem definidos em vez de
-partilharem estado ou memória. Os papéis clássicos de uma SOA — *provider*
-(quem presta o serviço), *consumer* (quem o consome) e *broker/registry*
+partilharem estado ou memória. Os papéis clássicos de uma SOA *provider*
+(quem presta o serviço), *consumer* (quem o consome) e *registry*
 (o intermediário que permite a descoberta mútua, desacoplando consumidores
-de endereços fixos de providers) — são todos representados na arquitetura
+de endereços fixos de providers) são todos representados na arquitetura
 deste projeto: o Service Registry assume o papel de broker, enquanto os
 restantes quatro serviços alternam entre provider e consumer consoante a
 direção do fluxo de dados (por exemplo, o Storage é provider para o
@@ -68,9 +65,9 @@ localização sem exigir configuração estática nos seus consumidores — é o
 que permite a uma SOA escalar horizontalmente (múltiplas réplicas de um
 mesmo serviço, descobertas de forma transparente) e geograficamente
 (serviços distribuídos por múltiplos nós ou regiões). Esta mesma
-propriedade é, como se discute na Secção 4 e 5.1, o ponto de maior
+propriedade é, como se discute nas Secções 4 e 5.1, o ponto de maior
 concentração de risco do sistema: a descoberta depende inteiramente da
-integridade do broker.
+integridade do registry.
 
 ### 2.2 FCAPS e Fault Management
 
@@ -78,26 +75,17 @@ Modelo FCAPS (ISO/IEC 7498-4), com foco no workflow de Fault Management:
 Detecting → Diagnosing and Isolating → Correlating → Resolution/Mitigation
 → Post-Mortem (Lesson03). Nota do syllabus: *"Fault Management within FCAPS
 does not deal with security events (i.e., at least explicit security
-events)"* — motiva a integração com um SIEM (secção 2.4).
+events)"* motiva a integração com um SIEM (secção 2.4).
 
 ### 2.3 Monitorização de larga escala: Zabbix
 
-O syllabus da cadeira recomenda explicitamente o uso de Prometheus,
-seguindo o modelo *pull-based* (o servidor central faz *scrape* periódico
-de métricas expostas pelos próprios serviços), amplamente adotado em
-ambientes Kubernetes nativos pela sua integração direta com a API do
-cluster e pelo modelo de dados multidimensional (labels). Este projeto
-adota Zabbix como alternativa, uma plataforma de monitorização mais
+Este projeto adota Zabbix como alternativa, uma plataforma de monitorização mais
 tradicionalmente orientada a infraestrutura, que suporta tanto o modelo
 pull (checks ativos/passivos via agente) como um modelo *push* através de
-proxies — este último particularmente relevante na topologia de rede do
+proxies este último particularmente relevante na topologia de rede do
 projeto, onde o site do cluster Incus/k3s está atrás de NAT e não é
 diretamente alcançável a partir das VMs que hospedam o Zabbix server
-(Secção 3.3). A substituição de Prometheus por Zabbix foi autorizada pelo docente, no
-contexto de liberdade de escolha tecnológica ("podemos usar as
-tecnologias que quisermos"), confirmada verbalmente em aula e
-posteriormente por escrito, dado o enunciado nomear Prometheus
-explicitamente.
+(Secção 3.3).
 
 ### 2.4 SIEM e Attack-Defense Trees
 
@@ -107,25 +95,19 @@ análise histórica de logs) e *Security Event Management* (SEM —
 correlação e deteção em tempo quase real), tipicamente completadas por
 normalização de eventos de múltiplas fontes, motores de correlação,
 capacidades de resposta a incidentes e relatórios de compliance. Neste
-projeto, a função de SIEM é cumprida pelo Wazuh, a ferramenta recomendada
-no syllabus e usada nas aulas práticas. Os agentes Wazuh recolhem os logs
+projeto, a função de SIEM é cumprida pelo Wazuh. Os agentes Wazuh recolhem os logs
 dos nós (*log management*), o Wazuh indexer guarda-os e permite a análise
 histórica (SIM), e o motor de regras e decoders do manager faz a
 normalização e a correlação de eventos em tempo quase real (SEM). A
 capacidade nativa de *active response* permite associar a cada deteção uma
-ação automática de contenção, usada para as três ameaças tratadas na
-Secção 5.
+ação automática de contenção, usada para as três ameaças tratadas na Secção 5.
 
-Attack-Defense Trees (ADTrees), segundo a formulação de Kordy et al.
-referenciada no syllabus, modelam um cenário de ameaça como uma hierarquia
+Attack-Defense Trees (ADTrees) modelam um cenário de ameaça como uma hierarquia
 onde o nó raiz representa o ativo ou objetivo visado, cada nível seguinte
 refina esse objetivo em sub-objetivos ou técnicas mais específicas
-(*disjunctive refinement*, OR — qualquer um basta; ou *conjunctive
-refinement*, AND — todos são necessários), e nós de defesa
-(*countermeasures*) se ligam ao nó de ataque específico que mitigam. As
-três ADTrees construídas para este projeto (Secção 4.2) seguem esta
-notação, com os serviços-alvo no topo da hierarquia, à semelhança do
-exemplo dos autores originais apresentado no syllabus.
+(OR — qualquer um basta; AND — todos são necessários), e nós de defesa
+que se ligam ao nó de ataque específico que mitigam. As três ADTrees construídas para este projeto (Secção 4.2) seguem esta
+notação, com os serviços-alvo no topo da hierarquia.
 
 ---
 
@@ -275,8 +257,8 @@ distinguir a origem do registo.
 Metodologia: notação de Kordy et al. (Lesson04, slides 21-25) — nós de
 ataque (círculo vermelho), nós de defesa (retângulo verde), disjunctive/
 conjunctive refinement, countermeasures. Três ADTrees construídas para as
-ameaças da secção 5, disponíveis em `adtrees-ssle-projeto1.md` e como
-export do attacktree.online (Anexo C/D).
+ameaças da secção 5, incluídas diretamente nas Secções 5.1, 5.2 e 5.3, e
+disponíveis também em `adtrees-ssle-projeto1.md` (Anexo C).
 
 ### 4.3 Large-scale system monitoring
 
@@ -1157,7 +1139,7 @@ mesmo teste:
 
 **Resultado contraintuitivo, mas explicável:** duplicar as réplicas do
 `ingestion` não melhorou a resiliência — piorou-a ligeiramente. Isto
-confirma empiricamente um argumento já feito na Secção 7: o gargalo real
+confirma empiricamente um argumento já feito nas Secções 4.1 e 5.2: o gargalo real
 do sistema não é o `ingestion` (que já tinha 2 réplicas e escala sem
 dificuldade), mas o **Service Registry**, que permanece com uma única
 réplica e estado em memória (Secção 3.3). Cada réplica adicional de
@@ -1248,7 +1230,13 @@ achado transversal mais relevante é que **o Service Registry concentra a
 maior parte do risco do sistema** — está presente em todas as três
 ADTrees como alvo direto ou como passo intermédio — o que o torna o
 candidato natural para a primeira prioridade de mitigação em qualquer
-iteração futura da arquitetura.
+iteração futura da arquitetura. O teste de escalabilidade horizontal da
+Secção 6.1 reforça este mesmo ponto de forma quantitativa e
+independente das PoCs de ataque: duplicar as réplicas do `ingestion`
+não melhorou a resiliência do sistema sob carga — ligeiramente piorou-a
+— precisamente porque o componente que escala não é o componente que
+limita. Segurança e escalabilidade apontam, nesta arquitetura, para a
+mesma conclusão a partir de dois métodos de avaliação distintos.
 
 Um segundo achado relevante, descoberto durante a execução das PoCs e não
 antecipado na modelação de ameaças inicial, é que **nem todas as
@@ -1310,4 +1298,3 @@ foi identificado como limitação, não como trabalho em separado.
 - A. Evidência "antes" (`evidencia/antes/`)
 - B. Evidência das PoCs (`evidencia/poc{1,2,3}-*`)
 - C. ADTrees completas (`adtrees-ssle-projeto1.md`)
-- D. Export do attacktree.online
