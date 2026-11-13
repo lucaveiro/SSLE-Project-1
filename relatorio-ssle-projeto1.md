@@ -17,12 +17,12 @@ Este relatório documenta o desenho, implementação e análise de segurança
 de uma arquitetura SOA de pequena escala — um pipeline de ingestão,
 armazenamento e análise de dados de sensores — construída sobre os Guiões
 1 e 2 da disciplina e empacotada num cluster Kubernetes (k3s) dentro de
-contentores Incus. O objetivo do Projeto 1 é desenhar e correr
+contentores Incus. O objetivo do Projeto 1 é duplo: (i) desenhar e correr
 uma arquitetura orientada a serviços capaz de escalar, com um esquema de
 identificação e localização hierárquico adequado a ambientes de larga
-escala, analisar, explorar na prática e propor mitigação para três
-ameaças route/signals hijacking, denial-of-service
-massivo, e botnets/fraude de dados completando o ciclo exploração →
+escala; e (ii) analisar, explorar na prática e propor mitigação para três
+ameaças do syllabus da cadeira — route/signals hijacking, denial-of-service
+massivo, e botnets/fraude de dados — completando o ciclo exploração →
 deteção → resposta → post-mortem para cada uma.
 
 O relatório está organizado da seguinte forma: a Secção 2 enquadra os
@@ -33,7 +33,10 @@ risco, incluindo a superfície de ataque e as três ADTrees construídas; a
 Secção 5 detalha, para cada uma das três ameaças escolhidas, a sua
 exploração prática (prova de conceito), deteção e resposta; a Secção 6
 avalia a escalabilidade da solução; e a Secção 7 fecha com as principais
-conclusões e limitações identificadas.
+conclusões e limitações identificadas. Este é o Projeto 1 de um conjunto
+de dois: o foco aqui está na deteção e prevenção de ameaças, enquanto o
+Projeto 2, subsequente, reutilizará esta mesma arquitetura para abordar
+tolerância a ataques.
 
 ---
 
@@ -51,10 +54,10 @@ Secção 4.
 Uma arquitetura orientada a serviços (SOA) decompõe um sistema num
 conjunto de serviços independentes, fracamente acoplados (*loose
 coupling*), que comunicam através de contratos bem definidos em vez de
-partilharem estado ou memória. Os papéis clássicos de uma SOA *provider*
-(quem presta o serviço), *consumer* (quem o consome) e *registry*
+partilharem estado ou memória. Os papéis clássicos de uma SOA — *provider*
+(quem presta o serviço), *consumer* (quem o consome) e *broker/registry*
 (o intermediário que permite a descoberta mútua, desacoplando consumidores
-de endereços fixos de providers) são todos representados na arquitetura
+de endereços fixos de providers) — são todos representados na arquitetura
 deste projeto: o Service Registry assume o papel de broker, enquanto os
 restantes quatro serviços alternam entre provider e consumer consoante a
 direção do fluxo de dados (por exemplo, o Storage é provider para o
@@ -67,7 +70,7 @@ mesmo serviço, descobertas de forma transparente) e geograficamente
 (serviços distribuídos por múltiplos nós ou regiões). Esta mesma
 propriedade é, como se discute nas Secções 4 e 5.1, o ponto de maior
 concentração de risco do sistema: a descoberta depende inteiramente da
-integridade do registry.
+integridade do broker.
 
 ### 2.2 FCAPS e Fault Management
 
@@ -75,17 +78,26 @@ Modelo FCAPS (ISO/IEC 7498-4), com foco no workflow de Fault Management:
 Detecting → Diagnosing and Isolating → Correlating → Resolution/Mitigation
 → Post-Mortem (Lesson03). Nota do syllabus: *"Fault Management within FCAPS
 does not deal with security events (i.e., at least explicit security
-events)"* motiva a integração com um SIEM (secção 2.4).
+events)"* — motiva a integração com um SIEM (secção 2.4).
 
 ### 2.3 Monitorização de larga escala: Zabbix
 
-Este projeto adota Zabbix como alternativa, uma plataforma de monitorização mais
+O syllabus da cadeira recomenda explicitamente o uso de Prometheus,
+seguindo o modelo *pull-based* (o servidor central faz *scrape* periódico
+de métricas expostas pelos próprios serviços), amplamente adotado em
+ambientes Kubernetes nativos pela sua integração direta com a API do
+cluster e pelo modelo de dados multidimensional (labels). Este projeto
+adota Zabbix como alternativa, uma plataforma de monitorização mais
 tradicionalmente orientada a infraestrutura, que suporta tanto o modelo
 pull (checks ativos/passivos via agente) como um modelo *push* através de
-proxies este último particularmente relevante na topologia de rede do
+proxies — este último particularmente relevante na topologia de rede do
 projeto, onde o site do cluster Incus/k3s está atrás de NAT e não é
 diretamente alcançável a partir das VMs que hospedam o Zabbix server
-(Secção 3.3).
+(Secção 3.3). A substituição de Prometheus por Zabbix foi autorizada pelo docente, no
+contexto de liberdade de escolha tecnológica ("podemos usar as
+tecnologias que quisermos"), confirmada verbalmente em aula e
+posteriormente por escrito, dado o enunciado nomear Prometheus
+explicitamente.
 
 ### 2.4 SIEM e Attack-Defense Trees
 
@@ -95,19 +107,25 @@ análise histórica de logs) e *Security Event Management* (SEM —
 correlação e deteção em tempo quase real), tipicamente completadas por
 normalização de eventos de múltiplas fontes, motores de correlação,
 capacidades de resposta a incidentes e relatórios de compliance. Neste
-projeto, a função de SIEM é cumprida pelo Wazuh. Os agentes Wazuh recolhem os logs
+projeto, a função de SIEM é cumprida pelo Wazuh, a ferramenta recomendada
+no syllabus e usada nas aulas práticas. Os agentes Wazuh recolhem os logs
 dos nós (*log management*), o Wazuh indexer guarda-os e permite a análise
 histórica (SIM), e o motor de regras e decoders do manager faz a
 normalização e a correlação de eventos em tempo quase real (SEM). A
 capacidade nativa de *active response* permite associar a cada deteção uma
-ação automática de contenção, usada para as três ameaças tratadas na Secção 5.
+ação automática de contenção, usada para as três ameaças tratadas na
+Secção 5.
 
-Attack-Defense Trees (ADTrees) modelam um cenário de ameaça como uma hierarquia
+Attack-Defense Trees (ADTrees), segundo a formulação de Kordy et al.
+referenciada no syllabus, modelam um cenário de ameaça como uma hierarquia
 onde o nó raiz representa o ativo ou objetivo visado, cada nível seguinte
 refina esse objetivo em sub-objetivos ou técnicas mais específicas
-(OR — qualquer um basta; AND — todos são necessários), e nós de defesa
-que se ligam ao nó de ataque específico que mitigam. As três ADTrees construídas para este projeto (Secção 4.2) seguem esta
-notação, com os serviços-alvo no topo da hierarquia.
+(*disjunctive refinement*, OR — qualquer um basta; ou *conjunctive
+refinement*, AND — todos são necessários), e nós de defesa
+(*countermeasures*) se ligam ao nó de ataque específico que mitigam. As
+três ADTrees construídas para este projeto (Secção 4.2) seguem esta
+notação, com os serviços-alvo no topo da hierarquia, à semelhança do
+exemplo dos autores originais apresentado no syllabus.
 
 ---
 
@@ -127,7 +145,7 @@ sensor → [discover via registry] → ingestion → [discover via registry] →
                                                                      (discover via registry)
 ```
 
-[TODO: inserir diagrama de arquitetura]
+![Arquitetura de serviços — namespace ssle (k3s)](images/diagrama-arquitetura.png)
 
 ### 3.2 Identificação e naming hierárquico (slide 7)
 
@@ -161,7 +179,7 @@ pedidos no slide 7:
   analytics (30003); storage em ClusterIP
 - Sem NetworkPolicies no namespace `ssle`
 
-[TODO: inserir diagrama de topologia — VM → Incus → k3s → pods]
+![Topologia de rede e infraestrutura](images/diagrama-topologia.png)
 
 ### 3.4 Integração com monitorização/SIEM
 
@@ -250,7 +268,17 @@ sobre tráfego legítimo (heartbeats normais do Storage), gerando um
 `DELETE /unregister` automático sobre o próprio sistema a cada 15
 segundos — um caso real e medido de autodenegação de serviço causada
 pela própria camada de defesa, só corrigido depois de a regra passar a
-distinguir a origem do registo.
+distinguir a origem do registo. Vale a pena notar que esta distinção —
+tal como qualquer alternativa que verificasse antes o campo `location`
+em vez do nó embutido no `instance_id` — é necessariamente heurística,
+não definitiva: ambos os campos são declarados livremente pelo cliente
+no `POST /register` (Secção 5.1), sem qualquer prova de identidade por
+trás. Um atacante que conheça o critério de deteção pode simplesmente
+declarar um `instance_id` ou uma `location` que passem no teste. A
+deteção baseada em padrões de conteúdo reduz o conjunto de atacantes
+não sofisticados que conseguem passar despercebidos, mas só a mitigação
+com `mTLS` e registo ligado à identidade do certificado (proposta na
+ADTree da Secção 4.2) fecha esta classe de bypass de forma definitiva.
 
 ### 4.2 Attack and Defense Trees
 
@@ -605,15 +633,76 @@ confirmando que o sistema distingue corretamente tráfego legítimo de
 malicioso e reage apenas ao segundo, sem efeitos colaterais sobre o
 funcionamento normal do pipeline.
 
-**Limitação residual a documentar:** a resposta continua a remover
-**todas** as instâncias de `storage-service` (real e maliciosa), por o
-endpoint `/unregister` do `registry.py` não aceitar um filtro por
-`instance_id` pattern. O sistema autorrecupera a instância real via
-heartbeat (~15s), mas isto significa que a resposta automática, tal como
-implementada, causa uma breve janela de indisponibilidade do serviço
-mesmo quando reage corretamente — um compromisso entre mitigação
-automática e disponibilidade que uma versão futura do `registry.py`
-deveria resolver com um endpoint de remoção seletiva.
+**Iteração de refinamento — remoção seletiva, sem indisponibilidade:** a
+versão inicial do active-response (acima) removia **todas** as
+instâncias de `storage-service` (real e maliciosa), por o pedido
+`DELETE /unregister` enviado não incluir `instance_id` — apesar de o
+próprio `registry.py` já suportar remoção seletiva quando esse campo é
+fornecido (`registry[name].pop(instance_id, None)` vs.
+`registry[name].clear()`). Corrigido o script para primeiro consultar
+`GET /services`, aplicar o mesmo critério de legitimidade da regra
+100101 (nome do nó no `instance_id`) e remover individualmente, por
+`instance_id`, apenas as entradas não reconhecidas:
+
+```bash
+IDS=$(curl -s "http://$MASTER:30050/services" | grep -oE '"[^"]*storage-service[^"]*":\{' ...)
+for ID in $IDS; do
+  if ! echo "$ID" | grep -qE "k3s-node1\.storage-service|k3s-master\.storage-service"; then
+    curl -s -X DELETE ".../unregister" -d "{\"name\":\"storage-service\",\"instance_id\":\"$ID\"}"
+  fi
+done
+```
+
+**Obstáculo de implementação encontrado e resolvido:** a associação
+direta do active-response à regra-pai 100100 nunca invocava o script —
+confirmado por depuração extensiva (`execd.debug=2`), que revelou o
+`wazuh-execd` a referenciar um nome de comando corrompido
+(`remove-malicious-registry0`) sempre que a regra tinha uma regra-filha
+associada (100101, usada para marcar registos legítimos). A causa foi a
+relação pai-filha em si: o Wazuh entrega o active-response através do
+caminho de avaliação da regra que efetivamente "vence", não
+necessariamente a regra à qual o comando está formalmente associado no
+`ossec.conf`. A correção foi criar uma terceira regra-filha, dedicada ao
+caso malicioso (`100102`, com `match` negado face à 100101), e associar
+o active-response a essa regra específica — resolvendo o problema sem
+alterar as regras 100100/100101 já validadas, nem as respostas das
+Ameaças 2 e 3, que nunca tiveram este problema (as suas regras não têm
+filhas). **Confirmado em teste real:** a instância real permaneceu
+ininterruptamente registada durante todo o ataque, sem qualquer janela
+de indisponibilidade — ao contrário da Ameaça 2, onde a mitigação
+continua a afetar temporariamente tráfego legítimo (Secção 5.2.1), a
+Ameaça 1 atinge aqui uma resposta corretiva sem efeitos colaterais
+mensuráveis.
+
+**Lacuna de cobertura identificada e fechada — padrão de remoção
+(Fase B):** as regras 100100/100101/100102 reconhecem apenas o padrão
+de **registo** (`[+] ... -> ...`, impresso por `register_service()` em
+`common.py`), deixando sem deteção o padrão de **remoção** explorado na
+Fase B da PoC (Secção 5.1, "Action-response adopted") — um atacante que
+chamasse `DELETE /unregister` sem nunca se ter registado primeiro não
+gerava qualquer alerta. Fechada com uma quarta regra, independente da
+hierarquia pai-filha anterior (evitando deliberadamente o mesmo bug de
+associação já identificado):
+
+```xml
+<rule id="100103" level="10">
+  <if_sid>1</if_sid>
+  <match type="pcre2">\[\-\].*unregistered</match>
+  <description>SSLE: remoção de storage-service detetada (possível DoS via unregister)</description>
+  <group>ssle_hijacking,</group>
+</rule>
+```
+
+**Confirmado em teste real** (`DELETE /unregister` isolado, sem registo
+prévio do atacante): `Rule: 100103 (level 10) -> 'SSLE: remoção de
+storage-service detetada (possível DoS via unregister)'`, com a
+instância real a recuperar via heartbeat ~15s depois, como já
+documentado na PoC original. Esta regra é de deteção apenas (nível
+"Detective", sem active-response associado) — a mitigação efetiva da
+remoção em massa depende de uma correção aplicacional ao `registry.py`
+(exigir `instance_id` em `/unregister`), já identificada como
+countermeasure na ADTree da Secção 4.2, e não de uma resposta reativa
+do SIEM.
 
 ### 5.2 Ameaça 2 — Massive Denial-of-Service
 
