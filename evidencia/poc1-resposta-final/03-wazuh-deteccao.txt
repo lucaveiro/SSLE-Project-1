@@ -1,0 +1,1 @@
+Rule: 100102 (level 12) -> 'SSLE: registo malicioso de storage-service (nó desconhecido)'

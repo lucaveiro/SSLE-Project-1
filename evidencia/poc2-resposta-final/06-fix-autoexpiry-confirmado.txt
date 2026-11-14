@@ -1,0 +1,13 @@
+Apos corrigir responder.py (threading.Timer(60, delete_rule) por cada /add,
+em vez de depender do Wazuh chamar /delete):
+
+$ iptables -L INPUT -n | grep 30001      # aos ~10s depois do flood
+ACCEPT     tcp  --  0.0.0.0/0  0.0.0.0/0  tcp dpt:30001 limit: avg 10/sec burst 5
+DROP       tcp  --  0.0.0.0/0  0.0.0.0/0  tcp dpt:30001
+
+$ sleep 65
+$ iptables -L INPUT -n | grep 30001      # aos ~75s - vazio
+(sem output)
+
+Confirma expiracao automatica e autogerida, sem qualquer comando manual
+de remocao nem segunda chamada do Wazuh.

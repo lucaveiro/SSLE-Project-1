@@ -477,10 +477,10 @@ exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
     confirmado via `timedatectl` que o desvio é uniforme entre todos os
     contentores, pelo que a ordem relativa dos eventos documentados
     permanece válida.
-  - Evidência: `evidencia/poc1-registry-poisoned.json`,
-    `evidencia/poc1-roundrobin-alternancia.txt`,
-    `evidencia/poc1-intercepted-data.log`,
-    `evidencia/poc1-unregister-dos.json`
+  - Evidência: `evidencia/poc1-intercepted-data.log` (log do
+    `fake_storage.py` no atacante, confirmando a receção sustentada de
+    `POST /store`), `evidencia/poc1-roundrobin-alternancia.txt`,
+    `evidencia/poc1-unregister-dos.json`.
 
 #### 5.1.1 Detection and Active-Response (Phase 4)
 
@@ -533,6 +533,12 @@ ameaça fica assim visível nas duas camadas, na monitorização (Zabbix) e no
 SIEM (Wazuh).
 
 ![Deteção da Ameaça 1 no Zabbix — problema "Possivel hijacking do Service Registry" (severidade High) no host ssle-k3s-cluster](<evidencias-detecao/Deteção Ameaça 1 (Zabbix nativo).png>)
+
+![Deteção da Ameaça 1 no Wazuh — regra 100102, registo malicioso de storage-service](<evidencias-detecao/Deteção Ameaça 1 (Wazuh).png>)
+
+Os timestamps dos dois alertas (16:54:56 no Wazuh e no Zabbix) coincidem
+ao segundo, confirmando empiricamente a correlação FCAPS↔segurança
+também pela via visual, não apenas pela inspeção de logs em bruto.
 
 **Active-response nativo — falha identificada e documentada:** o Wazuh
 associa automaticamente o comando `firewall-drop` a alertas de nível ≥ 10
@@ -704,6 +710,30 @@ remoção em massa depende de uma correção aplicacional ao `registry.py`
 countermeasure na ADTree da Secção 4.2, e não de uma resposta reativa
 do SIEM.
 
+**Nota adicional — deteção mais rápida do que o ciclo de observação da
+PoC:** numa reexecução posterior da Fase A (com a deteção e o
+active-response já permanentemente ativos, não apenas durante os testes
+dedicados acima), as 6 leituras consecutivas de `get_service()` ao
+longo de 6 segundos devolveram sempre a instância real, nunca a
+maliciosa — ao contrário do comportamento alternado documentado na
+execução original (Secção 5.1, "Action-response adopted"), feita antes
+de existir qualquer deteção. A explicação é a própria correção: a
+instância maliciosa foi detetada e removida pela regra 100102 antes de
+a primeira leitura do round-robin ocorrer, coerente com o intervalo de
+atualização de 10s do `log[]` mas também com o facto de o agente Wazuh
+processar o ficheiro em modo *tail* praticamente contínuo. Este é, na
+prática, o cenário mais favorável possível: o sistema impediu a
+exploração de forma tão rápida que nem a PoC, a correr imediatamente a
+seguir ao registo malicioso, conseguiu observar uma única leitura
+envenenada — uma confirmação mais forte do que a medição original de
+latência (Secção 6.3), obtida sem qualquer intervenção manual entre o
+ataque e a resposta.
+
+- Evidência (Fase 4 — deteção e active-response confirmados):
+  `evidencia/poc1-resposta-final/01-antes.json`, `02-ataque.json`,
+  `03-wazuh-deteccao.txt`, `04-active-response.txt`, `05-depois.json`,
+  `06-zabbix-log.txt`.
+
 ### 5.2 Ameaça 2 — Massive Denial-of-Service
 
 - **Description of the threat:**
@@ -825,10 +855,13 @@ do SIEM.
     um limiar fixo do sistema — o que torna o impacto real **imprevisível
     para um operador sem monitorização ativa**, agravando a severidade
     relativa a um DoS com comportamento constante e previsível.
-  - Evidência: `evidencia/poc2-dump-limit-negativo.json`,
-    `evidencia/poc2-dump-limit-normal.json`, `evidencia/poc2-flood-500.txt`,
-    `evidencia/poc2-pods-apos-recuperacao.txt`,
-    `evidencia/poc2-health-recuperado.txt`
+  - Evidência: os valores acima (taxa de falha 0–76.5%, 11 restarts do
+    pod `storage`, recuperação via `livenessProbe`) foram registados em
+    tempo real durante a execução da PoC e resumidos no texto; as
+    capturas brutas desta fase de exploração pura não foram preservadas
+    como ficheiros autónomos. A evidência da deteção e resposta
+    automática a este mesmo vetor está em `evidencia/poc2-resposta-final/`
+    (Secção 5.2.1).
 
 #### 5.2.1 Detection and Active-Response (Phase 4)
 
@@ -908,6 +941,8 @@ Wazuh:   Rule: 100201 (level 12) -> 'SSLE: possível DDoS — volume anómalo de
 Zabbix:  Trigger "Ingestion: request rate" -> PROBLEM (count(...,10s)>20)
 ```
 
+![Deteção da Ameaça 2 no Wazuh — volume de pedidos a /ingest](<evidencias-detecao/Deteção Ameaça 2 (Wazuh).png>)
+
 **Active-response — rate-limit no destino:** dado que o IP de origem não
 é fiável (achado acima), a resposta implementada não tenta bloquear o
 atacante — aplica um limite de taxa diretamente no NodePort do destino
@@ -921,8 +956,13 @@ curl -s -m 5 -X POST "http://10.255.255.42:9100/add" -d "{}"
 
 ```python
 # responder.py, no nó do cluster (k3s-master)
-iptables -I INPUT -p tcp --dport 30001 -m limit --limit 10/second -j ACCEPT
-iptables -A INPUT -p tcp --dport 30001 -j DROP
+def add_rule():
+    iptables -I INPUT -p tcp --dport 30001 -m limit --limit 10/second -j ACCEPT
+    iptables -A INPUT -p tcp --dport 30001 -j DROP
+
+# .../add dispara add_rule() e agenda a sua própria remoção,
+# independentemente de qualquer chamada externa:
+threading.Timer(60.0, delete_rule).start()
 ```
 
 Associado à regra via:
@@ -946,11 +986,60 @@ DROP    tcp  --  0.0.0.0/0  0.0.0.0/0  tcp dpt:30001
 **Nota técnica:** tal como na Ameaça 1, `<location>local</location>`
 não produziu execução alguma; a correção foi `<location>server</location>`.
 
+**Falha identificada e corrigida — o `<timeout>` nativo do Wazuh nunca
+expira esta regra:** uma reexecução prolongada do teste acima (várias
+chamadas ao longo de ~30 minutos) revelou que as regras de `iptables`
+nunca eram removidas automaticamente, acumulando um par `ACCEPT`+`DROP`
+por cada disparo (21 pares observados numa sessão de testes). A causa
+raiz, confirmada via `execd.debug=2`, não está no script de
+active-response, mas no próprio Wazuh:
+```
+DEBUG: Active response won't be added to timeout list. Message not
+received with alert keys from script 'active-response/bin/throttle-ingest.sh'
+```
+O Wazuh só agenda a expiração automática de um active-response quando
+consegue extrair *alert keys* (campos como `srcip`) do alerta via um
+decoder — exatamente a mesma limitação já identificada na Secção 5.1.1
+para o `firewall-drop` (ausência de decoder customizado a estruturar o
+log em texto simples), aqui com uma consequência diferente: em vez de o
+bloqueio falhar, é a **remoção automática** que nunca é agendada,
+confirmado nas três invocações observadas (`"command":"add"` sempre, a
+chamada de expiração em modo `delete` nunca ocorreu). Adicionalmente,
+identificou-se no próprio `responder.py` uma verificação de idempotência
+(`iptables -C` antes do `-I`) cujo resultado era descartado sem nunca
+condicionar a inserção — agravando a acumulação independentemente da
+causa do Wazuh.
+
+A correção não dependeu de resolver a limitação do Wazuh (fora do
+âmbito de um decoder customizado nesta entrega) — a expiração passou a
+ser autogerida pelo próprio `responder.py`, com um temporizador
+(`threading.Timer(60, delete_rule)`) disparado a cada `/add`, removendo
+exatamente o par de regras aplicado, sem depender de nenhuma segunda
+chamada do Wazuh:
+
+**Confirmado em teste real, após a correção:** novo flood aplicado,
+regra presente aos 10s, **ausente aos 75s**, sem qualquer comando manual
+entre as duas verificações — confirmando que a expiração é agora
+genuinamente automática e independente do mecanismo nativo do Wazuh
+(que permanece, ele próprio, inoperante para esta regra).
+
 **Limitação documentada:** o rate-limit aplica-se a **todo** o tráfego
 para o NodePort 30001, incluindo o sensor legítimo, durante a janela de
-`timeout` (60s) — uma mitigação de disponibilidade parcial e temporária,
-não uma resolução cirúrgica do ataque (coerente com o facto de o IP de
-origem real não poder ser isolado, achado acima).
+60s — uma mitigação de disponibilidade parcial e temporária, não uma
+resolução cirúrgica do ataque (coerente com o facto de o IP de origem
+real não poder ser isolado, achado acima). Este achado soma-se aos já
+documentados nas Secções 4.1 e 5.1.1/5.1.2 de o próprio active-response
+poder tornar-se, por si só, um vetor de risco adicional — aqui não por
+excesso de ação (como o `DELETE /unregister` em loop da Ameaça 1), mas
+por **ausência silenciosa de limpeza**, um modo de falha menos óbvio
+porque não produz nenhum erro visível nos logs do Wazuh, só a
+acumulação progressiva de estado no sistema protegido.
+
+- Evidência (Fase 4 — deteção, bug do timeout e correção confirmada):
+  `evidencia/poc2-resposta-final/01-vetor1-timing.txt`,
+  `02-wazuh-deteccao.txt`, `03-iptables-throttle.txt`,
+  `04-vetor2-sob-throttle-ativo.txt`, `05-bug-timeout-execd-debug.txt`,
+  `06-fix-autoexpiry-confirmado.txt`.
 
 ### 5.3 Ameaça 3 — Botnets / Data Fraud
 
@@ -1087,10 +1176,10 @@ origem real não poder ser isolado, achado acima).
     expulsos da janela de consulta sem deixar qualquer rasto acessível
     pela própria API da aplicação.
   - **Nenhum controlo de deteção estava ativo durante a PoC.**
-  - Evidência: `evidencia/poc3-average-poisoned.json`,
-    `evidencia/poc3-anomalies-poisoned.json`,
-    `evidencia/poc3-average-after-botnet.json`,
-    `evidencia/poc3-anomalies-wide-window.json`
+  - Evidência: `evidencia/poc3-average-after-botnet.json`. (As duas
+    consultas de confirmação a `[]`/`?limit=100` citadas acima foram
+    registadas em tempo real durante a execução e não preservadas como
+    ficheiros autónomos separados.)
 
 #### 5.3.1 Detection and Active-Response (Phase 4)
 
@@ -1147,6 +1236,10 @@ Wazuh:   Rule: 100300 (level 12) -> 'SSLE: valor de temperatura fora da gama fí
 Zabbix:  Trigger "Possível fraude de dados — valor fora da gama física" -> PROBLEM
 ```
 
+![Deteção da Ameaça 3 no Wazuh — valor fora da gama física (regra 100300)](<evidencias-detecao/Deteção Ameaça 3 (Wazuh).png>)
+
+![Deteção da Ameaça 3 no Zabbix — problema "Possivel fraude de dados — valor fora da gama física" (severidade High)](<evidencias-detecao/Deteção Ameaça 3 (Zabbix).png>)
+
 Com isto, as três ameaças ficam com a correlação Zabbix↔Wazuh
 confirmada empiricamente (Secções 5.1.1, 5.2.1, 5.3.1), cumprindo de
 forma consistente o requisito de ponte FCAPS↔segurança (Secção 4.3)
@@ -1167,12 +1260,14 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) FRAUD_DETECTED" >> /var/ossec/etc/lists/ssl
 
 **Confirmado em teste real**, com disparo sustido durante toda a janela
 em que o valor forjado permaneceu presente nas 100 leituras mais
-recentes (mais de 4 minutos consecutivos, com um evento a cada ~5-6s,
-coerente com o ciclo do poller):
+recentes (reconfirmado numa reexecução posterior, com um evento a
+cada ~4-6s, coerente com o ciclo do poller):
 ```
-2026-11-07T16:12:32Z FRAUD_DETECTED - active-response triggered, rule 100300
-...
-2026-11-07T16:16:30Z FRAUD_DETECTED - active-response triggered, rule 100300
+2026-11-14T18:04:08Z FRAUD_DETECTED
+2026-11-14T18:04:12Z FRAUD_DETECTED
+2026-11-14T18:04:12Z FRAUD_DETECTED
+2026-11-14T18:04:18Z FRAUD_DETECTED
+2026-11-14T18:04:18Z FRAUD_DETECTED
 ```
 
 **Limitação documentada — resposta duplicada sem remediação real:** o
@@ -1208,6 +1303,10 @@ das três respostas implementadas, apenas duas (Ameaças 1 e 2) resolvem
 a causa do alerta; a terceira (Ameaça 3) só o documenta, deixando a
 remediação efetiva — por exemplo, um endpoint `DELETE /temperatures/<id>`
 no Storage — como trabalho futuro.
+
+- Evidência (Fase 4 — deteção e quarentena confirmadas):
+  `evidencia/poc3-resposta-final/01-injecao.txt`, `02-poller-anomaly.txt`,
+  `03-wazuh-deteccao.txt`, `04-quarentena.txt`.
 
 ---
 
@@ -1385,5 +1484,8 @@ foi identificado como limitação, não como trabalho em separado.
 ## Anexos
 
 - A. Evidência "antes" (`evidencia/antes/`)
-- B. Evidência das PoCs (`evidencia/poc{1,2,3}-*`)
+- B. Evidência da fase de exploração pura (`evidencia/poc1-*`,
+  `evidencia/poc3-average-after-botnet.json`) e da deteção/resposta da
+  Fase 4, confirmada por reexecução (`evidencia/poc{1,2,3}-resposta-final/`)
 - C. ADTrees completas (`adtrees-ssle-projeto1.md`)
+- D. Capturas de ecrã de deteção Wazuh/Zabbix (`evidencias-detecao/`)

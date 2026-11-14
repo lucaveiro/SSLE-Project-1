@@ -1,0 +1,13 @@
+Execução imediatamente a seguir ao teste de deteção (throttle iptables
+10/sec, burst 5, ainda dentro da janela de timeout=60s):
+
+    31 200
+   169 502
+(84.5% falhas — atribuível ao próprio active-response ainda ativo,
+limitando todo o tráfego para a porta 30001, não apenas ao atacante)
+
+Execução seguinte (throttle já expirado, sistema estabilizado):
+   200 200
+
+Execução seguinte (confirmação):
+   200 200

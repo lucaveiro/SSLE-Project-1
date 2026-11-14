@@ -1,0 +1,14 @@
+$ time curl -s "http://10.255.255.42:30003/anomalies?limit=100" -o /tmp/dump_normal.json
+real    0m0.036s
+user    0m0.011s
+sys     0m0.011s
+
+$ time curl -s "http://10.255.255.42:30003/anomalies?limit=-1" -o /tmp/dump.json
+real    0m1.918s
+user    0m0.010s
+sys     0m0.009s
+
+$ wc -c /tmp/dump.json /tmp/dump_normal.json
+839586 /tmp/dump.json
+  3025 /tmp/dump_normal.json
+842611 total

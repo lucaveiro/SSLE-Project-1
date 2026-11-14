@@ -1,0 +1,15 @@
+$ incus exec wazuh-container -- grep -i "throttle-ingest" /var/ossec/logs/ossec.log | tail -10
+
+2026/11/14 19:02:04 wazuh-execd[581] execd.c:284 at ExecdRun(): DEBUG: Executing command 'active-response/bin/throttle-ingest.sh ... "command":"add" ...'
+2026/11/14 19:02:04 wazuh-execd[581] execd.c:298 at ExecdRun(): DEBUG: Active response won't be added to timeout list. Message not received with alert keys from script 'active-response/bin/throttle-ingest.sh'
+
+2026/11/14 19:10:42 wazuh-execd[581] execd.c:284 at ExecdRun(): DEBUG: Executing command 'active-response/bin/throttle-ingest.sh ... "command":"add" ...'
+2026/11/14 19:10:42 wazuh-execd[581] execd.c:298 at ExecdRun(): DEBUG: Active response won't be added to timeout list. Message not received with alert keys from script 'active-response/bin/throttle-ingest.sh'
+
+2026/11/14 19:31:34 wazuh-execd[581] execd.c:284 at ExecdRun(): DEBUG: Executing command 'active-response/bin/throttle-ingest.sh ... "command":"add" ...'
+2026/11/14 19:31:34 wazuh-execd[581] execd.c:298 at ExecdRun(): DEBUG: Active response won't be added to timeout list. Message not received with alert keys from script 'active-response/bin/throttle-ingest.sh'
+
+Confirma, nas 3 invocações observadas, que o comando executado foi
+sempre "add" e que o Wazuh nunca agenda a chamada de expiracao
+("won't be added to timeout list") por falta de alert keys extraiveis
+do log (sem decoder customizado para esta regra).

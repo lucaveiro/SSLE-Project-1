@@ -1,0 +1,2 @@
+$ curl -s -X POST "$STORAGE_URL/store" -H "Content-Type: application/json" -d '{"device_id":"demo-fraude","temperature":666.0}'
+{"status":"stored"}

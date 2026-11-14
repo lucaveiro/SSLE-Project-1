@@ -1,0 +1,4 @@
+Rule: 100201 (level 12) -> 'SSLE: possível DDoS — volume anómalo de pedidos a /ingest'
+10.42.0.0 - - [14/Nov/2026 18:14:09] "POST /ingest HTTP/1.1" 200 -
+10.42.0.0 - - [14/Nov/2026 18:14:10] "POST /ingest HTTP/1.1" 200 -
+10.42.0.0 - - [14/Nov/2026 18:14:09] "POST /ingest HTTP/1.1" 200 -

@@ -1,5 +1,0 @@
-[CHECK] max=29.54 avg=24.87
-[ANOMALY] temperature out of physical range: max=666.0 avg=31.22
-[ANOMALY] temperature out of physical range: max=666.0 avg=31.27
-[ANOMALY] temperature out of physical range: max=666.0 avg=31.28
-[ANOMALY] temperature out of physical range: max=666.0 avg=31.25

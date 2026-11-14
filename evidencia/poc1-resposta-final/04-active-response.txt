@@ -1,0 +1,5 @@
+removed instance: xx.evil.rule102.storage-service.pwnedD
+{"error":"Not found"}
+removed instance: storage-service
+{"message":"unregistered"}
+removed instance: xx.evil.ultimate.storage-service.pwnedB

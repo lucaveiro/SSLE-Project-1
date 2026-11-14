@@ -1,5 +1,0 @@
-2026-11-13T23:26:35Z FRAUD_DETECTED - active-response triggered, rule 100300
-2026-11-13T23:26:41Z FRAUD_DETECTED - active-response triggered, rule 100300
-2026-11-13T23:26:45Z FRAUD_DETECTED - active-response triggered, rule 100300
-2026-11-13T23:26:51Z FRAUD_DETECTED - active-response triggered, rule 100300
-2026-11-13T23:26:55Z FRAUD_DETECTED - active-response triggered, rule 100300

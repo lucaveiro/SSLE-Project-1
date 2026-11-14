@@ -1,0 +1,5 @@
+[ANOMALY] temperature out of physical range: max=999.0 avg=81.32
+[ANOMALY] temperature out of physical range: max=999.0 avg=81.22
+[ANOMALY] temperature out of physical range: max=999.0 avg=81.2
+[ANOMALY] temperature out of physical range: max=999.0 avg=81.2
+[ANOMALY] temperature out of physical range: max=999.0 avg=81.2
