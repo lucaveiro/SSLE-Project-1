@@ -1,0 +1,53 @@
+<!--
+  Regras locais do Wazuh para o Projeto 1 (SSLE) — cópia verbatim de
+  /var/ossec/etc/rules/local_rules.xml em wazuh-container.
+-->
+<group name="ssle,hijacking,">
+  <rule id="100100" level="12">
+    <if_sid>1</if_sid>
+    <match type="pcre2">\[\+\].*storage-service</match>
+    <description>SSLE: registo de storage-service (verificar origem)</description>
+    <group>ssle_hijacking,</group>
+  </rule>
+  <rule id="100101" level="3">
+    <if_sid>100100</if_sid>
+    <match type="pcre2">k3s-node1\.storage-service|k3s-master\.storage-service</match>
+    <description>SSLE: registo legítimo de storage-service (nó conhecido)</description>
+    <group>ssle_hijacking,legitimate,</group>
+  </rule>
+  <rule id="100102" level="12">
+    <if_sid>100100</if_sid>
+    <match type="pcre2" negate="yes">k3s-node1\.storage-service|k3s-master\.storage-service</match>
+    <description>SSLE: registo malicioso de storage-service (nó desconhecido)</description>
+    <group>ssle_hijacking,malicious,</group>
+  </rule>
+  <rule id="100103" level="10">
+    <if_sid>1</if_sid>
+    <match type="pcre2">\[\-\].*unregistered</match>
+    <description>SSLE: remoção de storage-service detetada (possível DoS via unregister)</description>
+    <group>ssle_hijacking,</group>
+  </rule>
+</group>
+
+<group name="ssle,ddos,">
+  <rule id="100200" level="3">
+    <if_sid>1</if_sid>
+    <match type="pcre2">POST /ingest</match>
+    <description>SSLE: pedido individual a /ingest</description>
+    <group>ssle_ddos,</group>
+  </rule>
+  <rule id="100201" level="12" frequency="30" timeframe="10">
+    <if_matched_sid>100200</if_matched_sid>
+    <description>SSLE: possível DDoS — volume anómalo de pedidos a /ingest</description>
+    <group>ssle_ddos,</group>
+  </rule>
+</group>
+
+<group name="ssle,fraud,">
+  <rule id="100300" level="12">
+    <if_sid>1</if_sid>
+    <match type="pcre2">\[ANOMALY\]</match>
+    <description>SSLE: valor de temperatura fora da gama física válida (possível fraude de dados)</description>
+    <group>ssle_fraud,</group>
+  </rule>
+</group>

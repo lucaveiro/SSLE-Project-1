@@ -1,0 +1,32 @@
+Nov 13 21:48:04 attacker python3[487]: [2026-11-13T21:48:04.438103] "POST /store HTTP/1.1" 200 -
+Nov 13 21:48:04 attacker python3[487]: [2026-11-13T21:48:04.522440] "GET /temperatures?limit=100 HTTP/1.1" 200 -
+Nov 13 21:48:08 attacker python3[487]: [2026-11-13T21:48:08.663041] "GET /health HTTP/1.1" 200 -
+Nov 13 21:48:08 attacker python3[487]: [2026-11-13T21:48:08.667166] "GET /health HTTP/1.1" 200 -
+Nov 13 21:48:08 attacker python3[487]: [2026-11-13T21:48:08.670089] "GET /health HTTP/1.1" 200 -
+Nov 13 21:48:09 attacker python3[487]: [2026-11-13T21:48:09.572254] "GET /temperatures?limit=100 HTTP/1.1" 200 -
+Nov 13 21:48:14 attacker python3[487]: [INTERCEPT] /store <- {"device_id": "pt.centro.dc-incus.sensor-dc9b95965-mlt4f", "temperature": 26.15}
+Nov 13 21:48:14 attacker python3[487]: [2026-11-13T21:48:14.497582] "POST /store HTTP/1.1" 200 -
+Nov 13 21:48:14 attacker python3[487]: [2026-11-13T21:48:14.616590] "GET /temperatures?limit=100 HTTP/1.1" 200 -
+Nov 13 21:48:18 attacker python3[487]: [2026-11-13T21:48:18.696671] "GET /health HTTP/1.1" 200 -
+Nov 13 21:48:18 attacker python3[487]: [2026-11-13T21:48:18.699344] "GET /health HTTP/1.1" 200 -
+Nov 13 21:48:18 attacker python3[487]: [2026-11-13T21:48:18.704006] "GET /health HTTP/1.1" 200 -
+Nov 13 21:48:19 attacker python3[487]: [2026-11-13T21:48:19.669105] "GET /temperatures?limit=100 HTTP/1.1" 200 -
+Nov 13 23:31:45 attacker systemd[1]: Stopping fake-storage.service - Fake storage endpoint for hijacking PoC...
+Nov 13 23:31:45 attacker systemd[1]: fake-storage.service: Deactivated successfully.
+Nov 13 23:31:45 attacker systemd[1]: Stopped fake-storage.service - Fake storage endpoint for hijacking PoC.
+Nov 13 23:31:45 attacker systemd[1]: fake-storage.service: Consumed 12.896s CPU time, 19.2M memory peak, 2.6M memory swap peak.
+-- Boot 6988082a857f4c9d84233b96cb96492f --
+Nov 13 23:31:50 attacker systemd[1]: Started fake-storage.service - Fake storage endpoint for hijacking PoC.
+Nov 13 23:34:06 attacker python3[171]: [2026-11-13T23:34:06.369835] "GET /health HTTP/1.1" 200 -
+Nov 13 23:34:20 attacker python3[171]: [2026-11-13T23:34:20.401950] "GET /health HTTP/1.1" 200 -
+Nov 13 23:48:59 attacker systemd[1]: Stopping fake-storage.service - Fake storage endpoint for hijacking PoC...
+Nov 13 23:48:59 attacker systemd[1]: fake-storage.service: Deactivated successfully.
+Nov 13 23:48:59 attacker systemd[1]: Stopped fake-storage.service - Fake storage endpoint for hijacking PoC.
+-- Boot b0855fe9d0404fa8b2d40c84918945ab --
+Nov 14 16:21:48 attacker systemd[1]: Started fake-storage.service - Fake storage endpoint for hijacking PoC.
+Nov 14 16:52:30 attacker systemd[1]: Stopping fake-storage.service - Fake storage endpoint for hijacking PoC...
+Nov 14 16:52:30 attacker systemd[1]: fake-storage.service: Deactivated successfully.
+Nov 14 16:52:30 attacker systemd[1]: Stopped fake-storage.service - Fake storage endpoint for hijacking PoC.
+Nov 14 16:52:30 attacker systemd[1]: Started fake-storage.service - Fake storage endpoint for hijacking PoC.
+Nov 14 16:53:48 attacker python3[259]: [2026-11-14T16:53:48.179019] "GET /health HTTP/1.1" 200 -
+Nov 14 16:54:56 attacker python3[259]: [2026-11-14T16:54:56.271101] "GET /temperatures?limit=100 HTTP/1.1" 200 -

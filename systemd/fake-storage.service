@@ -1,0 +1,11 @@
+[Unit]
+Description=Fake storage endpoint for hijacking PoC
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/fake_storage.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

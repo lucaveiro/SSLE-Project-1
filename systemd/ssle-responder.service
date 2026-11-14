@@ -1,0 +1,14 @@
+# Cópia verbatim de /etc/systemd/system/ssle-responder.service em
+# k3s-master (secção [Service] gerada pelo drop-in zzz-lxc-service.conf do
+# Incus/LXC omitida — é ruído do ambiente, não conteúdo real da unit).
+[Unit]
+Description=SSLE throttle responder for DDoS active-response
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/responder.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

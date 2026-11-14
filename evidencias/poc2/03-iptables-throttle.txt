@@ -1,0 +1,2 @@
+ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:30001 limit: avg 10/sec burst 5
+DROP       tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:30001

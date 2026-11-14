@@ -1,0 +1,14 @@
+# Cópia verbatim de /etc/systemd/system/ssle-ingestion-stream.service em
+# k3s-master (secção [Service] gerada pelo drop-in zzz-lxc-service.conf do
+# Incus/LXC omitida — é ruído do ambiente, não conteúdo real da unit).
+[Unit]
+Description=Stream ingestion logs for Wazuh monitoring
+After=network.target
+
+[Service]
+ExecStart=/bin/bash -c "k3s kubectl -n ssle logs -f --tail=0 --all-containers -l app=ingestion >> /var/log/ingestion-stream.log 2>&1"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

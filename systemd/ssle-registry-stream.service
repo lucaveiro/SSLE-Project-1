@@ -1,0 +1,14 @@
+# Cópia verbatim de /etc/systemd/system/ssle-registry-stream.service em
+# k3s-master (secção [Service] gerada pelo drop-in zzz-lxc-service.conf do
+# Incus/LXC omitida — é ruído do ambiente, não conteúdo real da unit).
+[Unit]
+Description=Stream registry logs to file for Zabbix log monitoring
+After=network.target
+
+[Service]
+ExecStart=/bin/bash -c "k3s kubectl -n ssle logs -f --tail=0 deploy/registry >> /var/log/registry-stream.log 2>&1"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

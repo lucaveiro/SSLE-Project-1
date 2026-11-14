@@ -1,0 +1,64 @@
+{
+    "analytics-service": {
+        "pt.centro.dc-incus.k3s.k3s-node1.analytics-service.analytics-89cb754f6-f4tjc": {
+            "failures": 0,
+            "instance_id": "pt.centro.dc-incus.k3s.k3s-node1.analytics-service.analytics-89cb754f6-f4tjc",
+            "last_seen": "2026-11-14T16:54:17.496327+00:00",
+            "location": {
+                "country": "pt",
+                "datacenter": "dc-incus",
+                "node": "k3s-node1",
+                "rack": "k3s",
+                "region": "centro"
+            },
+            "registered_at": "2026-11-14T16:23:07.467120+00:00",
+            "url": "http://10.42.1.108:5003"
+        }
+    },
+    "ingestion-service": {
+        "pt.centro.dc-incus.k3s.k3s-master.ingestion-service.ingestion-55dcf5c8f-qsxxl": {
+            "failures": 0,
+            "instance_id": "pt.centro.dc-incus.k3s.k3s-master.ingestion-service.ingestion-55dcf5c8f-qsxxl",
+            "last_seen": "2026-11-14T16:54:17.490296+00:00",
+            "location": {
+                "country": "pt",
+                "datacenter": "dc-incus",
+                "node": "k3s-master",
+                "rack": "k3s",
+                "region": "centro"
+            },
+            "registered_at": "2026-11-14T16:23:07.483853+00:00",
+            "url": "http://10.42.0.118:5001"
+        },
+        "pt.centro.dc-incus.k3s.k3s-node1.ingestion-service.ingestion-55dcf5c8f-bdt74": {
+            "failures": 0,
+            "instance_id": "pt.centro.dc-incus.k3s.k3s-node1.ingestion-service.ingestion-55dcf5c8f-bdt74",
+            "last_seen": "2026-11-14T16:54:17.486290+00:00",
+            "location": {
+                "country": "pt",
+                "datacenter": "dc-incus",
+                "node": "k3s-node1",
+                "rack": "k3s",
+                "region": "centro"
+            },
+            "registered_at": "2026-11-14T16:23:07.319070+00:00",
+            "url": "http://10.42.1.106:5001"
+        }
+    },
+    "storage-service": {
+        "pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth": {
+            "failures": 0,
+            "instance_id": "pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth",
+            "last_seen": "2026-11-14T16:54:17.493179+00:00",
+            "location": {
+                "country": "pt",
+                "datacenter": "dc-incus",
+                "node": "k3s-node1",
+                "rack": "k3s",
+                "region": "centro"
+            },
+            "registered_at": "2026-11-14T16:23:07.420339+00:00",
+            "url": "http://10.42.1.104:5002"
+        }
+    }
+}

@@ -1,0 +1,13 @@
+NAME                            READY   STATUS    RESTARTS       AGE   IP            NODE         NOMINATED NODE   READINESS GATES
+pod/analytics-89cb754f6-f4tjc   1/1     Running   16 (31m ago)   36d   10.42.1.108   k3s-node1    <none>           <none>
+pod/ingestion-55dcf5c8f-bdt74   1/1     Running   15 (31m ago)   36d   10.42.1.106   k3s-node1    <none>           <none>
+pod/ingestion-55dcf5c8f-qsxxl   1/1     Running   16 (17h ago)   36d   10.42.0.118   k3s-master   <none>           <none>
+pod/registry-564797644c-dmxjh   1/1     Running   15 (31m ago)   36d   10.42.1.107   k3s-node1    <none>           <none>
+pod/sensor-dc9b95965-mlt4f      1/1     Running   15 (31m ago)   36d   10.42.1.109   k3s-node1    <none>           <none>
+pod/storage-f6f4dbd-lvwth       1/1     Running   22 (31m ago)   36d   10.42.1.104   k3s-node1    <none>           <none>
+
+NAME                TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)          AGE   SELECTOR
+service/analytics   NodePort    10.43.6.84     <none>        5003:30003/TCP   36d   app=analytics
+service/ingestion   NodePort    10.43.165.11   <none>        5001:30001/TCP   36d   app=ingestion
+service/registry    NodePort    10.43.32.14    <none>        5050:30050/TCP   36d   app=registry
+service/storage     ClusterIP   10.43.148.55   <none>        5002/TCP         36d   app=storage

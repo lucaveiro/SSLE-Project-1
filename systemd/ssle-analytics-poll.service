@@ -1,0 +1,15 @@
+# Cópia verbatim de /etc/systemd/system/ssle-analytics-poll.service em
+# k3s-master (secção [Service] gerada pelo drop-in zzz-lxc-service.conf do
+# Incus/LXC omitida — é ruído do ambiente, não conteúdo real da unit).
+[Unit]
+Description=Poll analytics /average for fraud detection
+After=network.target
+
+[Service]
+ExecStart=/opt/analytics_poll.sh
+Restart=always
+StandardOutput=append:/var/log/analytics-poll.log
+StandardError=append:/var/log/analytics-poll.log
+
+[Install]
+WantedBy=multi-user.target
