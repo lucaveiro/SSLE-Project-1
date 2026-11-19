@@ -309,7 +309,7 @@ justifica-se pela arquitetura do sistema: o mesmo vetor de exploração
 simultâneo para simular uma frota forjada de dispositivos (Botnets),
 falsificar a reputação/confiabilidade dos dados reportados por
 `device_id` (Reputation Systems) e envenenar os outputs analíticos
-consumidos (Fraud). Para cada ameaça, a estrutura segue os seis
+consumidos a jusante (Fraud). Para cada ameaça, a estrutura segue os seis
 pontos de discussão exigidos pelo enunciado do projeto: descrição da
 ameaça, relevância para o sistema, forma de exploração, ações de
 monitorização/mitigação relevantes, resposta adotada e post-mortem da
@@ -437,18 +437,18 @@ Regra criada:
   <rule id="100100" level="12">
     <if_sid>1</if_sid>
     <match type="pcre2">\[\+\].*storage-service</match>
-    <description>SSLE: tentativa de hijacking do Service Registry detetada</description>
+    <description>SSLE: registo de storage-service (verificar origem)</description>
     <group>ssle_hijacking,</group>
   </rule>
 </group>
 ```
 
 **Deteção confirmada:** reexecutada a Fase A da PoC (registo de instância
-falsa), o alerta foi gerado em produção, não apenas em teste isolado:
-```
-Rule: 100100 (level 12) -> 'SSLE: tentativa de hijacking do Service Registry detetada'
-[+] xx.evil.e2e.storage-service.pwnedH -> http://10.255.255.184:9999
-```
+falsa), o alerta foi gerado em produção, não apenas em teste isolado —
+confirmado visualmente nas duas camadas, nas imagens abaixo. A regra
+exata à qual o active-response fica associado (100102, não a 100100
+genérica mostrada acima) é detalhada na Secção 5.1.2, junto com a
+distinção entre registo legítimo e malicioso.
 
 A mesma tentativa foi também detetada do lado da monitorização: o Zabbix
 levantou um problema de severidade *High* ("Possivel hijacking do Service
@@ -477,6 +477,33 @@ curl -s -X DELETE "http://10.255.255.42:30050/unregister" \
   >> /var/ossec/logs/active-responses.log 2>&1
 ```
 
+A regra 100100 original, sem distinção de origem, disparava também para
+os heartbeats legítimos do storage real (re-registo a cada ~15s via
+`register_service()` em `common.py`), acionando `DELETE /unregister`
+sobre o próprio sistema a cada heartbeat — um caso real de
+autodenegação de serviço por resposta automática mal calibrada,
+confirmando o risco já identificado na análise de superfície de ataque
+(Secção 4.1). Foram introduzidas duas regras-filha, mais específicas que
+a 100100: uma de nível baixo que reconhece registos de nós legítimos
+conhecidos, e uma de nível alto — com o mesmo critério, negado —
+dedicada ao caso malicioso. É a esta segunda regra, não à genérica
+100100, que o active-response fica efetivamente associado:
+
+```xml
+<rule id="100101" level="3">
+  <if_sid>100100</if_sid>
+  <match type="pcre2">k3s-node1\.storage-service|k3s-master\.storage-service</match>
+  <description>SSLE: registo legítimo de storage-service (nó conhecido)</description>
+  <group>ssle_hijacking,legitimate,</group>
+</rule>
+<rule id="100102" level="12">
+  <if_sid>100100</if_sid>
+  <match type="pcre2" negate="yes">k3s-node1\.storage-service|k3s-master\.storage-service</match>
+  <description>SSLE: registo malicioso de storage-service (nó desconhecido)</description>
+  <group>ssle_hijacking,malicious,</group>
+</rule>
+```
+
 Associado à regra via:
 ```xml
 <command>
@@ -487,27 +514,15 @@ Associado à regra via:
 <active-response>
   <command>remove-malicious-registry</command>
   <location>server</location>
-  <rules_id>100100</rules_id>
+  <rules_id>100102</rules_id>
 </active-response>
 ```
 
-A regra 100100 original, sem distinção de origem, disparava também para
-os heartbeats legítimos do storage real (re-registo a cada ~15s via
-`register_service()` em `common.py`), acionando `DELETE /unregister`
-sobre o próprio sistema a cada heartbeat — um caso real de
-autodenegação de serviço por resposta automática mal calibrada,
-confirmando o risco já identificado na análise de superfície de ataque
-(Secção 4.1). Foi introduzida uma segunda regra, mais específica e de
-nível baixo, que intercepta registos de nós legítimos conhecidos antes
-de a regra genérica disparar:
-
-```xml
-<rule id="100101" level="3">
-  <if_sid>100100</if_sid>
-  <match type="pcre2">k3s-node1\.storage-service|k3s-master\.storage-service</match>
-  <description>SSLE: registo legítimo de storage-service (nó conhecido)</description>
-  <group>ssle_hijacking,legitimate,</group>
-</rule>
+**Deteção e resposta confirmadas em produção**, reexecutada a Fase A da
+PoC (registo de instância falsa):
+```
+Rule: 100102 (level 12) -> 'SSLE: registo malicioso de storage-service (nó desconhecido)'
+[+] xx.evil.ultimate.storage-service.pwnedB -> http://10.255.255.184:9999
 ```
 
 **Resultado final, confirmado empiricamente em teste de ponta a ponta:**
@@ -515,7 +530,7 @@ de a regra genérica disparar:
 | Evento | Regra disparada | Active-response |
 |---|---|---|
 | Heartbeat legítimo (nó real, `k3s-node1`) | 100101 (level 3) | Não disparou |
-| Registo malicioso (`instance_id` com nó desconhecido) | 100100 (level 12) | Disparou — `{"message":"unregistered"}` |
+| Registo malicioso (`instance_id` com nó desconhecido) | 100102 (level 12) | Disparou — `{"message":"unregistered"}` |
 
 A contagem de linhas em `active-responses.log` permaneceu estável
 (9 linhas) durante uma janela de observação de 20s sem ataque, e
@@ -817,7 +832,7 @@ verificações.
 
 - **Descrição da ameaça:**
   `GET /services` no registry revela os IPs internos dos pods
-  . Com o endereço real do pod
+  (contornando a abstração do ClusterIP). Com o endereço real do pod
   Storage, um atacante escreve diretamente em `POST /store`, que não
   realiza qualquer validação de tipo ou gama independente de
   `ingestion.py` — a validação aí implementada (gama de temperatura,
@@ -834,7 +849,7 @@ verificações.
   qualquer mecanismo para distinguir uma frota real de sensores de uma
   forjada e arbitrariamente grande. Isto compromete diretamente a
   fiabilidade dos resultados do Analytics, dos quais a monitorização e a
-  análise de causa-raiz dependem.
+  análise de causa-raiz a jusante dependeriam.
 
 - **Como pode ser explorada?**
   - **Vetor de Ataque 1 — Divulgação de IP interno de pod via GET
@@ -935,7 +950,7 @@ verificações.
     | `count` | 100 | 100 |
 
     O `/average` do `analytics-service` — um endpoint consumido para
-    decisões — ficou completamente não confiável com apenas
+    decisões a jusante — ficou completamente não confiável com apenas
     16 escritas forjadas, sem qualquer credencial ou autenticação.
   - **Limitação do próprio mecanismo de deteção interno:** o endpoint
     `/anomalies` (`ANOMALY_THRESHOLD = 28.0`) devolveu `[]` mesmo com
