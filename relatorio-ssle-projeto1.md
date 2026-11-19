@@ -385,20 +385,29 @@ PoC.
   → 200 OK
   ```
   Nenhuma validação de identidade foi exigida pelo registry, confirmando
-  a ausência total de autenticação no registo. O round-robin de
-  `get_service()` passou de imediato a alternar entre
-  a instância real e a falsa (confirmado em 6 pedidos consecutivos, ver
-  evidência `poc1-roundrobin-alternancia.txt`).
+  a ausência total de autenticação no registo. O registo foi aceite de
+  imediato (`200 OK`), tornando a instância maliciosa elegível, a partir
+  desse momento, para o round-robin de `get_service()` juntamente com a
+  instância real.
 
 - **Post-mortem da PoC:**
-  - **Impacto observado:** a Fase A resultou em interceção **contínua e
-    sustentada** de dados reais do sensor (`pt.centro.dc-incus.sensor-
-    dc9b95965-mlt4f`) ao longo de aproximadamente 2 horas ininterruptas
-    (18:54:02–20:51:13, UTC — contentores Incus em `Etc/UTC`, VM
-    hospedeira em `Europe/Lisbon`/WEST; ver nota metodológica abaixo),
-    sem qualquer indicação de erro do lado do `ingestion-service` — o
-    atacante recebeu exatamente as mesmas temperaturas reais que seriam
-    entregues ao Storage legítimo, em cada ciclo de 5s do sensor.
+  - **Impacto observado:** confirmado pelo menos um `POST /store` real
+    efetivamente intercetado pelo endpoint falso do atacante —
+    `evidencia/poc1-intercepted-data.log` regista `[INTERCEPT] /store <-
+    {"device_id": "pt.centro.dc-incus.sensor-dc9b95965-mlt4f",
+    "temperature": 26.15}` às 21:48:14 (13/11, UTC), sem qualquer
+    indicação de erro do lado do `ingestion-service` — confirma que
+    tráfego real do sensor chegou de facto ao atacante, não apenas que o
+    registo malicioso foi aceite. O mesmo log mostra o endpoint falso
+    ativo e a responder `200 OK` a `/health` em várias janelas ao longo
+    de mais de um dia (13–14/11), mas regista apenas esta interceção
+    pontual de dados reais — o volume de interceções ao longo do tempo
+    em que a instância falsa esteve registada não foi medido de forma
+    contínua nesta PoC, e a evidência capturada do round-robin
+    (`poc1-roundrobin-alternancia.txt`, 6 pedidos consecutivos) mostra,
+    nesse momento específico, sempre a instância legítima — não prova a
+    alternância por si só, apenas que o mecanismo de balanceamento
+    continuava ativo.
   - **Nenhum controlo de deteção estava ativo durante a PoC**, pelo que o
     ataque não gerou qualquer alerta — confirma o risco "Alto" atribuído
     na ADTree (árvore 1) e a prioridade de implementação de `Alertar
@@ -409,14 +418,9 @@ PoC.
     qualquer entidade com acesso de rede ao registry, sem qualquer
     conhecimento prévio do sistema — reforça a classificação de
     Complexity "Ordinary" atribuída na ADTree.
-  - **Nota metodológica:** os contentores Incus operam em `Etc/UTC`
-    enquanto a VM hospedeira opera em `Europe/Lisbon` (WEST, UTC+1);
-    confirmado via `timedatectl` que o desvio é uniforme entre todos os
-    contentores, pelo que a ordem relativa dos eventos documentados
-    permanece válida.
   - Evidência: `evidencia/poc1-intercepted-data.log` (log do
-    `fake_storage.py` no atacante, confirmando a receção sustentada de
-    `POST /store`), `evidencia/poc1-roundrobin-alternancia.txt`.
+    `fake_storage.py` no atacante, confirmando a interceção pontual de um
+    `POST /store` real), `evidencia/poc1-roundrobin-alternancia.txt`.
 
 #### 5.1.1 Deteção e Resposta Automática (Fase 4)
 
@@ -943,11 +947,16 @@ verificações.
 - **Post-mortem da PoC:**
   - **Impacto observado, quantificado:**
 
-    | Métrica | Antes da injeção | Depois (16 dispositivos forjados) |
+    | Métrica | Antes da injeção* | Depois (16 dispositivos forjados) |
     |---|---|---|
-    | `average_temperature` | 24.6 °C | **64.93 °C** (+164%) |
-    | `max` | 29.41 °C | **456.0 °C** |
+    | `average_temperature` | 24.6 °C | **75.01 °C** (+205%) |
+    | `max` | 29.41 °C | **999.0 °C** |
+    | `min` | — | 20.05 °C |
     | `count` | 100 | 100 |
+
+    \* *Valor "antes" registado em tempo real durante a execução, sem
+    ficheiro autónomo preservado; os valores "depois" correspondem
+    exatamente a `evidencia/poc3-average-after-botnet.json`.*
 
     O `/average` do `analytics-service` — um endpoint consumido para
     decisões a jusante — ficou completamente não confiável com apenas
