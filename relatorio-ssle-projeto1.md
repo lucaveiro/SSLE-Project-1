@@ -309,7 +309,7 @@ justifica-se pela arquitetura do sistema: o mesmo vetor de exploração
 simultâneo para simular uma frota forjada de dispositivos (Botnets),
 falsificar a reputação/confiabilidade dos dados reportados por
 `device_id` (Reputation Systems) e envenenar os outputs analíticos
-consumidos a jusante (Fraud). Para cada ameaça, a estrutura segue os seis
+consumidos (Fraud). Para cada ameaça, a estrutura segue os seis
 pontos de discussão exigidos pelo enunciado do projeto: descrição da
 ameaça, relevância para o sistema, forma de exploração, ações de
 monitorização/mitigação relevantes, resposta adotada e post-mortem da
@@ -834,7 +834,7 @@ verificações.
   qualquer mecanismo para distinguir uma frota real de sensores de uma
   forjada e arbitrariamente grande. Isto compromete diretamente a
   fiabilidade dos resultados do Analytics, dos quais a monitorização e a
-  análise de causa-raiz a jusante dependeriam.
+  análise de causa-raiz dependem.
 
 - **Como pode ser explorada?**
   - **Vetor de Ataque 1 — Divulgação de IP interno de pod via GET
@@ -935,7 +935,7 @@ verificações.
     | `count` | 100 | 100 |
 
     O `/average` do `analytics-service` — um endpoint consumido para
-    decisões a jusante — ficou completamente não confiável com apenas
+    decisões — ficou completamente não confiável com apenas
     16 escritas forjadas, sem qualquer credencial ou autenticação.
   - **Limitação do próprio mecanismo de deteção interno:** o endpoint
     `/anomalies` (`ANOMALY_THRESHOLD = 28.0`) devolveu `[]` mesmo com
