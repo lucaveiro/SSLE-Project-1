@@ -40,40 +40,30 @@ graph TD
 
 ---
 
-## ADTree 2 — DDoS (2 serviços-alvo no topo, OR)
+## ADTree 2 — DDoS (alvo único no topo, vetor único)
 
 ```mermaid
 graph TD
-    B1((Analytics + Storage<br/>analytics.py:5003<br/>storage.py:5002))
     B2((Ingestion + Registry<br/>ingestion.py:5001<br/>registry.py:5050))
 
-    B1 ---|OR| B2
-
-    B1b((Unbounded query<br/>limit=-1))
     B2b((Flood /ingest<br/>amplified by registry))
 
-    B1 --- B1b
     B2 --- B2b
 
-    E1[Enforce 1 ≤ limit<br/>≤ 1000]
     E2[Rate limiting<br/>on /ingest]
     E3[Decouple discovery<br/>cache + TTL]
     E4[Production WSGI<br/>server]
     E5[Tune resource<br/>requests/limits]
-    E6[Zabbix/Elastic<br/>DDoS alerts]
+    E6[Zabbix/Wazuh<br/>DDoS alerts]
 
-    B1b -.-> E1
     B2b -.-> E2
     B2b -.-> E3
     B2b -.-> E4
-    B1 -.-> E5
+    B2 -.-> E5
     B2 -.-> E6
 
-    style B1 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
     style B2 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
-    style B1b fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
     style B2b fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
-    style E1 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#388e3c
     style E2 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#388e3c
     style E3 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#388e3c
     style E4 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#388e3c
