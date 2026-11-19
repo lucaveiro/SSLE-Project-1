@@ -371,7 +371,7 @@ PoC.
   registry (`MAX_FAILURES=3`, `HEALTH_INTERVAL=10s`) — e regista em log
   todo o conteúdo recebido em `POST /store`.
 
-  **Fase A — Registo da instância falsa:**
+  **Registo da instância falsa:**
   ```
   POST /register
   {"name":"storage-service","url":"http://10.255.255.184:9999",
