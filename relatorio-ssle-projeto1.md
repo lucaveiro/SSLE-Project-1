@@ -293,10 +293,10 @@ completo, sem necessidade das mitigações mais caras (ex. credencial por
 dispositivo). Esta observação informa a ordem de prioridade de
 implementação: as mitigações de baixo esforço e alto impacto devem ser
 priorizadas primeiro, independentemente da ameaça a que pertencem — por
-exemplo, `Do not expose internal pod URLs` (Effort: Low) e `Require
-instance_id and restrict deletion` (Effort: Low) eliminam, por si só, o
-Attack Path mais barato de duas das três ameaças, antes de se avançar
-para mitigações de maior esforço como mTLS ou credenciais por dispositivo.
+exemplo, `Do not expose internal pod URLs` (Effort: Low) elimina, por si
+só, o vetor mais barato de fechar entre as três ameaças, antes de se
+avançar para mitigações de maior esforço como mTLS (Hijacking) ou
+credenciais por dispositivo (Botnet/Fraude).
 
 ---
 
@@ -325,9 +325,6 @@ PoC.
   endpoint malicioso como "storage-service" (`registry.py`, `/register`),
   fazendo com que a descoberta por round-robin encaminhe uma parte do
   tráfego para o atacante (interceção/adulteração de dados).
-  Alternativamente, um `DELETE /unregister` sem `instance_id` apaga todas
-  as instâncias registadas de um serviço, causando uma negação de serviço
-  que só se autorrecupera através do heartbeat de 15s.
 
 - **Porque é relevante para o sistema?**
   O Service Registry é o único ponto de confiança de que todos os outros
@@ -347,21 +344,7 @@ PoC.
     encaminhar uma fração de todas as consultas a `storage-service` para
     o atacante, possibilitando a interceção de dados e a falsificação de
     metadados de localização/geografia.
-  - **Vetor de Ataque 2 — Remoção não autenticada em massa via
-    unregister:** `DELETE /unregister` aceita `{"name": "<serviço>"}` sem
-    exigir `instance_id`. Quando `instance_id` é omitido, o registry
-    limpa TODAS as instâncias registadas desse serviço num único pedido
-    não autenticado (`registry.py`: `registry[name].clear()`). Repetido a
-    cada poucos segundos, sustenta uma negação de serviço persistente,
-    apesar do heartbeat de autorrecuperação de 15s.
-  - **Vetor de Ataque 3 — Registry alcançável externamente via NodePort
-    do Kubernetes:** `10-registry.yaml` expõe o registry como
-    `type=NodePort` (30050), sem qualquer NetworkPolicy a restringir o
-    tráfego de entrada. Isto torna os Vetores 1 e 2 exploráveis a partir
-    de qualquer host com conectividade de rede aos nós k3s, não apenas a
-    partir de dentro do cluster.
-  - ADTree: `adtrees-ssle-projeto1.md`, árvore 1 (disjunctive refinement —
-    qualquer um dos 3 vetores é suficiente)
+  - ADTree: `adtrees-ssle-projeto1.md`, árvore 1
 
 ![ADTree 1 — Service Registry](<images/adtree1-Service Registry Hijack.png>)
 
@@ -369,13 +352,6 @@ PoC.
   - Exigir TLS mútuo e registo ligado à identidade (Desenvolvimento,
     Esforço Alto, Preventiva): o CN do certificado do cliente tem de
     corresponder ao `name` registado, fechando o Vetor de Ataque 1.
-  - Exigir `instance_id` e restringir a remoção à própria identidade de
-    quem chama (Desenvolvimento, Esforço Baixo, Preventiva): remove o
-    caminho de código `registry[name].clear()`, fechando o Vetor de
-    Ataque 2.
-  - Restringir o Service do registry a ClusterIP, removendo a exposição
-    via NodePort (Configuração, Esforço Baixo, Preventiva): fecha o
-    Vetor de Ataque 3.
   - Alertar sobre anomalias de registo (Configuração, Esforço Médio,
     Detetiva): monitorizar sobreposições de registo ou campos de
     localização inconsistentes com as regiões de implementação
@@ -410,21 +386,6 @@ PoC.
   a instância real e a falsa (confirmado em 6 pedidos consecutivos, ver
   evidência `poc1-roundrobin-alternancia.txt`).
 
-  **Fase B — DoS via unregister em massa:**
-  ```
-  DELETE /unregister {"name":"storage-service"}
-  → 200 OK {"message":"unregistered"}
-  ```
-  Um único pedido não autenticado removeu simultaneamente a instância
-  real **e** a falsa, confirmando que o endpoint de remoção não
-  distingue identidade nem exige confirmação. O sistema demonstrou o
-  comportamento de autorrecuperação previsto: a instância real
-  reapareceu via heartbeat (`registered_at` passou para o instante do
-  próximo re-registo, ~15s depois do `unregister`), mas a instância
-  falsa não — por não implementar o padrão de heartbeat do
-  `register_service()` de `common.py`, ficando permanentemente fora do
-  registry até um novo `POST /register` manual.
-
 - **Post-mortem da PoC:**
   - **Impacto observado:** a Fase A resultou em interceção **contínua e
     sustentada** de dados reais do sensor (`pt.centro.dc-incus.sensor-
@@ -439,18 +400,11 @@ PoC.
     na ADTree (árvore 1) e a prioridade de implementação de `Alertar
     sobre anomalias de registo` descrito em "Ações/métricas relevantes
     de monitorização e mitigação" acima.
-  - **A Fase B confirmou a assimetria de recuperação:** o `/unregister`
-    não distingue entre instâncias legítimas e maliciosas, mas o
-    mecanismo de recuperação (heartbeat) só beneficia serviços
-    corretamente implementados — um atacante teria de reemitir o
-    `/register` periodicamente para manter persistência, o que por si só
-    é um padrão observável (repetição de registos com o mesmo
-    `instance_id` suspeito) para a regra de deteção proposta.
   - **Limitação identificada:** a ausência de autenticação ou autorização
-    nos dois endpoints (`/register`, `/unregister`) torna esta PoC
-    trivialmente reprodutível por qualquer entidade com acesso de rede ao
-    registry, sem qualquer conhecimento prévio do sistema — reforça a
-    classificação de Complexity "Ordinary" atribuída na ADTree.
+    no endpoint `/register` torna esta PoC trivialmente reprodutível por
+    qualquer entidade com acesso de rede ao registry, sem qualquer
+    conhecimento prévio do sistema — reforça a classificação de
+    Complexity "Ordinary" atribuída na ADTree.
   - **Nota metodológica:** os contentores Incus operam em `Etc/UTC`
     enquanto a VM hospedeira opera em `Europe/Lisbon` (WEST, UTC+1);
     confirmado via `timedatectl` que o desvio é uniforme entre todos os
@@ -458,8 +412,7 @@ PoC.
     permanece válida.
   - Evidência: `evidencia/poc1-intercepted-data.log` (log do
     `fake_storage.py` no atacante, confirmando a receção sustentada de
-    `POST /store`), `evidencia/poc1-roundrobin-alternancia.txt`,
-    `evidencia/poc1-unregister-dos.json`.
+    `POST /store`), `evidencia/poc1-roundrobin-alternancia.txt`.
 
 #### 5.1.1 Deteção e Resposta Automática (Fase 4)
 

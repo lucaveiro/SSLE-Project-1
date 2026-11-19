@@ -11,45 +11,30 @@ Notação seguida de Lesson04-Monitoring (slide 25, Kordy et al.):
 
 ---
 
-## ADTree 1 — Service Registry (alvo único no topo)
+## ADTree 1 — Service Registry (alvo único no topo, vetor único)
 
 ```mermaid
 graph TD
     A0((Service Registry<br/>registry.py : 5050))
 
     A1((Abuse /register<br/>endpoint))
-    A2((Abuse /unregister<br/>endpoint))
-    A3((Reach registry<br/>via NodePort))
 
     A0 --- A1
-    A0 --- A2
-    A0 --- A3
 
     A1b((Register fake<br/>storage-service))
-    A2b((Mass unregister<br/>wipe))
 
     A1 --- A1b
-    A2 --- A2b
 
     D1[Require mTLS +<br/>identity-bound<br/>registration]
-    D2[Require instance_id<br/>+ scoped auth]
-    D3[Restrict to ClusterIP<br/>+ NetworkPolicy]
     D4[Alert on registration<br/>anomalies]
 
     A1b -.-> D1
-    A2b -.-> D2
-    A3 -.-> D3
     A0 -.-> D4
 
     style A0 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
     style A1 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
-    style A2 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
-    style A3 fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
     style A1b fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
-    style A2b fill:#fff,stroke:#d32f2f,stroke-width:3px,color:#d32f2f
     style D1 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#388e3c
-    style D2 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#388e3c
-    style D3 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#388e3c
     style D4 fill:#fff,stroke:#388e3c,stroke-width:3px,color:#388e3c
 ```
 
