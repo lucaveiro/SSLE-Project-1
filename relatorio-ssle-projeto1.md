@@ -33,11 +33,7 @@ risco, incluindo a superfície de ataque e as três ADTrees construídas; a
 Secção 5 detalha, para cada uma das três ameaças escolhidas, a sua
 exploração prática (prova de conceito), deteção e resposta; a Secção 6
 avalia a escalabilidade da solução; e a Secção 7 fecha com as principais
-conclusões e limitações identificadas. Este é o Projeto 1 de um conjunto
-de dois: o foco aqui está na deteção e prevenção de ameaças, enquanto o
-Projeto 2, subsequente, reutilizará esta mesma arquitetura para abordar
-tolerância a ataques.
-
+conclusões e limitações identificadas.
 ---
 
 ## 2. Relevant State of the Art
@@ -52,8 +48,7 @@ Secção 4.
 ### 2.1 Service-Oriented Architecture / Microservices
 
 Uma arquitetura orientada a serviços (SOA) decompõe um sistema num
-conjunto de serviços independentes, fracamente acoplados (*loose
-coupling*), que comunicam através de contratos bem definidos em vez de
+conjunto de serviços independentes, fracamente acoplados, que comunicam através de contratos bem definidos em vez de
 partilharem estado ou memória. Os papéis clássicos de uma SOA — *provider*
 (quem presta o serviço), *consumer* (quem o consome) e *broker/registry*
 (o intermediário que permite a descoberta mútua, desacoplando consumidores
@@ -63,7 +58,7 @@ restantes quatro serviços alternam entre provider e consumer consoante a
 direção do fluxo de dados (por exemplo, o Storage é provider para o
 Ingestion e para o Analytics, mas consumer do Registry).
 
-A propriedade de *discoverability* — um serviço anunciar a sua presença e
+A propriedade de *discoverability* — um serviço anuncia a sua presença e
 localização sem exigir configuração estática nos seus consumidores — é o
 que permite a uma SOA escalar horizontalmente (múltiplas réplicas de um
 mesmo serviço, descobertas de forma transparente) e geograficamente
@@ -76,30 +71,11 @@ integridade do broker.
 
 Modelo FCAPS (ISO/IEC 7498-4), com foco no workflow de Fault Management:
 Detecting → Diagnosing and Isolating → Correlating → Resolution/Mitigation
-→ Post-Mortem (Lesson03). Nota do syllabus: *"Fault Management within FCAPS
+→ Post-Mortem. Nota do syllabus: *"Fault Management within FCAPS
 does not deal with security events (i.e., at least explicit security
-events)"* — motiva a integração com um SIEM (secção 2.4).
+events)"* — motiva a integração com um SIEM (secção 2.3).
 
-### 2.3 Monitorização de larga escala: Zabbix
-
-O syllabus da cadeira recomenda explicitamente o uso de Prometheus,
-seguindo o modelo *pull-based* (o servidor central faz *scrape* periódico
-de métricas expostas pelos próprios serviços), amplamente adotado em
-ambientes Kubernetes nativos pela sua integração direta com a API do
-cluster e pelo modelo de dados multidimensional (labels). Este projeto
-adota Zabbix como alternativa, uma plataforma de monitorização mais
-tradicionalmente orientada a infraestrutura, que suporta tanto o modelo
-pull (checks ativos/passivos via agente) como um modelo *push* através de
-proxies — este último particularmente relevante na topologia de rede do
-projeto, onde o site do cluster Incus/k3s está atrás de NAT e não é
-diretamente alcançável a partir das VMs que hospedam o Zabbix server
-(Secção 3.3). A substituição de Prometheus por Zabbix foi autorizada pelo docente, no
-contexto de liberdade de escolha tecnológica ("podemos usar as
-tecnologias que quisermos"), confirmada verbalmente em aula e
-posteriormente por escrito, dado o enunciado nomear Prometheus
-explicitamente.
-
-### 2.4 SIEM e Attack-Defense Trees
+### 2.3 SIEM e Attack-Defense Trees
 
 Um SIEM (Security Information and Event Management) combina as funções de
 *log management*, *Security Information Management* (SIM — armazenamento e
@@ -107,8 +83,7 @@ análise histórica de logs) e *Security Event Management* (SEM —
 correlação e deteção em tempo quase real), tipicamente completadas por
 normalização de eventos de múltiplas fontes, motores de correlação,
 capacidades de resposta a incidentes e relatórios de compliance. Neste
-projeto, a função de SIEM é cumprida pelo Wazuh, a ferramenta recomendada
-no syllabus e usada nas aulas práticas. Os agentes Wazuh recolhem os logs
+projeto, a função de SIEM é cumprida pelo Wazuh. Os agentes Wazuh recolhem os logs
 dos nós (*log management*), o Wazuh indexer guarda-os e permite a análise
 histórica (SIM), e o motor de regras e decoders do manager faz a
 normalização e a correlação de eventos em tempo quase real (SEM). A
@@ -116,16 +91,13 @@ capacidade nativa de *active response* permite associar a cada deteção uma
 ação automática de contenção, usada para as três ameaças tratadas na
 Secção 5.
 
-Attack-Defense Trees (ADTrees), segundo a formulação de Kordy et al.
-referenciada no syllabus, modelam um cenário de ameaça como uma hierarquia
+Attack-Defense Trees (ADTrees), modelam um cenário de ameaça como uma hierarquia
 onde o nó raiz representa o ativo ou objetivo visado, cada nível seguinte
 refina esse objetivo em sub-objetivos ou técnicas mais específicas
-(*disjunctive refinement*, OR — qualquer um basta; ou *conjunctive
-refinement*, AND — todos são necessários), e nós de defesa
+(OR — qualquer um basta ou AND — todos são necessários), e nós de defesa
 (*countermeasures*) se ligam ao nó de ataque específico que mitigam. As
 três ADTrees construídas para este projeto (Secção 4.2) seguem esta
-notação, com os serviços-alvo no topo da hierarquia, à semelhança do
-exemplo dos autores originais apresentado no syllabus.
+notação, com os serviços-alvo no topo da hierarquia.
 
 ---
 
@@ -156,8 +128,7 @@ Esquema implementado em `common.py`:
 ex: pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth
 ```
 
-Propaga-se como campo `location` no Service Registry. Cobre os 4 aspetos
-pedidos no slide 7:
+Propaga-se como campo `location` no Service Registry:
 - **Localização física/lógica:** país→região→datacenter→rack→node
 - **Delegação geográfica:** campos independentes por nível
 - **Monitorização por localização / bónus de largura de banda:** uma
@@ -198,9 +169,8 @@ para o tráfego de ataque das PoCs (Secção 3.3):
   locais (`etc/rules/local_rules.xml`) e active-response associado por
   regra.
 
-Não foi usado um proxy Zabbix intermédio (ver nota de bónus não
-implementado em 3.2); a correlação FCAPS↔segurança foi obtida fazendo
-disparar, para a mesma janela temporal, um sinal Zabbix (operacional) e
+A correlação FCAPS↔segurança foi obtida fazendo
+disparar, para a mesma janela temporal, um sinal Zabbix (operação) e
 um sinal Wazuh (segurança) a partir da mesma fonte de log — confirmado
 empiricamente para as Ameaças 1 e 2 (Secções 5.1.1 e 5.2.1).
 
@@ -341,71 +311,80 @@ justifica-se pela arquitetura do sistema: o mesmo vetor de exploração
 simultâneo para simular uma frota forjada de dispositivos (Botnets),
 falsificar a reputação/confiabilidade dos dados reportados por
 `device_id` (Reputation Systems) e envenenar os outputs analíticos
-consumidos a jusante (Fraud). Para cada ameaça, a estrutura segue
-exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
+consumidos a jusante (Fraud). Para cada ameaça, a estrutura segue os seis
+pontos de discussão exigidos pelo enunciado do projeto: descrição da
+ameaça, relevância para o sistema, forma de exploração, ações de
+monitorização/mitigação relevantes, resposta adotada e post-mortem da
+PoC.
 
 ### 5.1 Ameaça 1 — Route/Signals Hijacking
 
-- **Description of the threat:**
-  Exploits the absence of authentication on the custom Service Registry
-  (Flask REST API, port 5050/NodePort 30050). An attacker registers a
-  malicious endpoint as "storage-service" (`registry.py` `/register`),
-  causing round-robin discovery to route a portion of traffic to the
-  attacker (data interception/tampering). Alternatively, `DELETE
-  /unregister` without an `instance_id` wipes all registered instances of
-  a service, causing a denial of service that self-recovers only via the
-  15s heartbeat.
+- **Descrição da ameaça:**
+  Explora a ausência de autenticação no Service Registry próprio (API
+  REST em Flask, porta 5050/NodePort 30050). Um atacante regista um
+  endpoint malicioso como "storage-service" (`registry.py`, `/register`),
+  fazendo com que a descoberta por round-robin encaminhe uma parte do
+  tráfego para o atacante (interceção/adulteração de dados).
+  Alternativamente, um `DELETE /unregister` sem `instance_id` apaga todas
+  as instâncias registadas de um serviço, causando uma negação de serviço
+  que só se autorrecupera através do heartbeat de 15s.
 
-- **Why is it relevant to the system?**
-  The Service Registry is the single point of trust every other component
-  depends on blindly: Sensor, Ingestion, Storage and Analytics all resolve
-  each other exclusively through it (`discover()` in `common.py`).
-  Compromising this one component compromises the entire data flow, making
-  it the highest-value target in the architecture.
+- **Porque é relevante para o sistema?**
+  O Service Registry é o único ponto de confiança de que todos os outros
+  componentes dependem cegamente: Sensor, Ingestion, Storage e Analytics
+  resolvem-se mutuamente apenas através dele (`discover()` em
+  `common.py`). Comprometer este único componente compromete todo o
+  fluxo de dados, tornando-o no alvo de maior valor em toda a
+  arquitetura.
 
-- **How can it be exploited?**
-  - **Attack Path 1 — Unauthenticated registration of malicious
-    storage-service instance:** `POST /register` accepts arbitrary
-    `name`/`url`/`instance_id`/`location` fields with no authentication.
-    An attacker registers an instance named `storage-service` pointing to
-    an attacker-controlled endpoint. The registry's round-robin load
-    balancer (`get_service()`) then routes a fraction of all
-    `storage-service` lookups to the attacker, enabling data interception
-    and falsified location/geography metadata.
-  - **Attack Path 2 — Unauthenticated service wipe via mass unregister:**
-    `DELETE /unregister` accepts `{"name": "<service>"}` without requiring
-    `instance_id`. When `instance_id` is omitted, the registry clears ALL
-    registered instances of that service in a single unauthenticated
-    request (`registry.py`: `registry[name].clear()`). Repeated every few
-    seconds, this sustains a persistent denial of service despite the 15s
-    self-healing heartbeat.
-  - **Attack Path 3 — Registry reachable externally via Kubernetes
-    NodePort:** `10-registry.yaml` exposes the registry as `type=NodePort`
-    (30050) with no NetworkPolicy restricting ingress. This makes Paths 1
-    and 2 exploitable from any host with network reachability to the k3s
-    nodes, not only from within the cluster.
+- **Como pode ser explorada?**
+  - **Vetor de Ataque 1 — Registo não autenticado de uma instância
+    maliciosa de storage-service:** `POST /register` aceita campos
+    `name`/`url`/`instance_id`/`location` arbitrários, sem qualquer
+    autenticação. Um atacante regista uma instância chamada
+    `storage-service` a apontar para um endpoint controlado por ele. O
+    balanceador round-robin do registry (`get_service()`) passa então a
+    encaminhar uma fração de todas as consultas a `storage-service` para
+    o atacante, possibilitando a interceção de dados e a falsificação de
+    metadados de localização/geografia.
+  - **Vetor de Ataque 2 — Remoção não autenticada em massa via
+    unregister:** `DELETE /unregister` aceita `{"name": "<serviço>"}` sem
+    exigir `instance_id`. Quando `instance_id` é omitido, o registry
+    limpa TODAS as instâncias registadas desse serviço num único pedido
+    não autenticado (`registry.py`: `registry[name].clear()`). Repetido a
+    cada poucos segundos, sustenta uma negação de serviço persistente,
+    apesar do heartbeat de autorrecuperação de 15s.
+  - **Vetor de Ataque 3 — Registry alcançável externamente via NodePort
+    do Kubernetes:** `10-registry.yaml` expõe o registry como
+    `type=NodePort` (30050), sem qualquer NetworkPolicy a restringir o
+    tráfego de entrada. Isto torna os Vetores 1 e 2 exploráveis a partir
+    de qualquer host com conectividade de rede aos nós k3s, não apenas a
+    partir de dentro do cluster.
   - ADTree: `adtrees-ssle-projeto1.md`, árvore 1 (disjunctive refinement —
-    qualquer um dos 3 paths é suficiente)
+    qualquer um dos 3 vetores é suficiente)
 
 ![ADTree 1 — Service Registry](<images/adtree1-Service Registry Hijack.png>)
 
-- **Relevant monitoring/mitigation actions/metrics:**
-  - Require mutual TLS and identity-bound registration (Development, High
-    effort, Preventive): client certificate CN must match the registered
-    `name`, closing Attack Path 1.
-  - Require `instance_id` and restrict deletion to caller's own identity
-    (Development, Low effort, Preventive): removes the
-    `registry[name].clear()` code path, closing Attack Path 2.
-  - Restrict registry Service to ClusterIP, remove NodePort exposure
-    (Configuration, Low effort, Preventive): closes Attack Path 3.
-  - Alert on registration anomalies (Configuration, Medium effort,
-    Detective): monitor for registration overwrites or location fields
-    inconsistent with known deployment regions.
+- **Ações/métricas relevantes de monitorização e mitigação:**
+  - Exigir TLS mútuo e registo ligado à identidade (Desenvolvimento,
+    Esforço Alto, Preventiva): o CN do certificado do cliente tem de
+    corresponder ao `name` registado, fechando o Vetor de Ataque 1.
+  - Exigir `instance_id` e restringir a remoção à própria identidade de
+    quem chama (Desenvolvimento, Esforço Baixo, Preventiva): remove o
+    caminho de código `registry[name].clear()`, fechando o Vetor de
+    Ataque 2.
+  - Restringir o Service do registry a ClusterIP, removendo a exposição
+    via NodePort (Configuração, Esforço Baixo, Preventiva): fecha o
+    Vetor de Ataque 3.
+  - Alertar sobre anomalias de registo (Configuração, Esforço Médio,
+    Detetiva): monitorizar sobreposições de registo ou campos de
+    localização inconsistentes com as regiões de implementação
+    conhecidas.
   - Métricas concretas de deteção (taxa de `POST /register` suspeitos,
     distinção entre nós legítimos e desconhecidos) implementadas e
     confirmadas em produção — ver Secção 5.1.1.
 
-- **Action-response adopted:**
+- **Resposta adotada:**
   PoC executada com um contentor Incus dedicado (`attacker`,
   `10.255.255.184`) na mesma rede `incus-default` dos nós k3s, simulando
   um atacante já presente no site (cenário "lab": atacante adjacente,
@@ -446,7 +425,7 @@ exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
   `register_service()` de `common.py`, ficando permanentemente fora do
   registry até um novo `POST /register` manual.
 
-- **Post-mortem of PoC:**
+- **Post-mortem da PoC:**
   - **Impacto observado:** a Fase A resultou em interceção **contínua e
     sustentada** de dados reais do sensor (`pt.centro.dc-incus.sensor-
     dc9b95965-mlt4f`) ao longo de aproximadamente 2 horas ininterruptas
@@ -457,9 +436,9 @@ exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
     entregues ao Storage legítimo, em cada ciclo de 5s do sensor.
   - **Nenhum controlo de deteção estava ativo durante a PoC**, pelo que o
     ataque não gerou qualquer alerta — confirma o risco "Alto" atribuído
-    na ADTree (árvore 1) e a prioridade de implementação de `Alert on
-    registration anomalies` descrito em "Relevant monitoring/mitigation
-    actions/metrics" acima.
+    na ADTree (árvore 1) e a prioridade de implementação de `Alertar
+    sobre anomalias de registo` descrito em "Ações/métricas relevantes
+    de monitorização e mitigação" acima.
   - **A Fase B confirmou a assimetria de recuperação:** o `/unregister`
     não distingue entre instâncias legítimas e maliciosas, mas o
     mecanismo de recuperação (heartbeat) só beneficia serviços
@@ -482,7 +461,7 @@ exatamente os 6 pontos pedidos no slide 12 ("Discussion of results").
     `POST /store`), `evidencia/poc1-roundrobin-alternancia.txt`,
     `evidencia/poc1-unregister-dos.json`.
 
-#### 5.1.1 Detection and Active-Response (Phase 4)
+#### 5.1.1 Deteção e Resposta Automática (Fase 4)
 
 A deteção e resposta para esta ameaça foram implementadas sobre o Wazuh
 (manager já disponível do Guião 4, `wazuh-container`), com o agente
@@ -507,18 +486,6 @@ Regra criada:
 </group>
 ```
 
-**Nota técnica relevante:** a tag `<match>` do Wazuh usa por omissão o
-motor OSRegex, não PCRE. A expressão `\[\+\].*storage-service`, válida em
-Python/PCRE, não casava com o evento sob OSRegex — a regra era avaliada
-(`Trying rule: 100100`) mas nunca correspondia (`*Rule matched` nunca
-aparecia). A correção foi declarar explicitamente `type="pcre2"` na tag
-`<match>`. Adicionalmente, a inclusão do ficheiro `local_rules.xml` no
-`ossec.conf` do manager exigia a tag `<rule_include>`, não `<rule>` (esta
-última gera um erro de configuração — `ERROR (1230): Invalid element` —
-que não impede o arranque do serviço, mas faz o manager correr com a
-configuração anterior/default, mascarando silenciosamente a ausência da
-regra local).
-
 **Deteção confirmada:** reexecutada a Fase A da PoC (registo de instância
 falsa), o alerta foi gerado em produção, não apenas em teste isolado:
 ```
@@ -540,33 +507,14 @@ Os timestamps dos dois alertas (16:54:56 no Wazuh e no Zabbix) coincidem
 ao segundo, confirmando empiricamente a correlação FCAPS↔segurança
 também pela via visual, não apenas pela inspeção de logs em bruto.
 
-**Active-response nativo — falha identificada e documentada:** o Wazuh
-associa automaticamente o comando `firewall-drop` a alertas de nível ≥ 10
-(a regra 100100 está em `level="12"`), sem necessidade de configuração
-explícita adicional. O active-response disparou (`Rule: 651 'Host Blocked
-by firewall-drop Active Response'`), mas falhou na execução:
-```
-active-response/bin/firewall-drop: Cannot read 'srcip' from data or invalid IP format
-```
-
-**Causa raiz:** o `firewall-drop` do Wazuh espera que o alerta contenha um
-campo `srcip` extraído por um decoder — nenhum decoder customizado foi
-criado para extrair um endereço IP do formato de log da aplicação
-(`[+] <instance_id> -> <url>`), e a aplicação em si nunca regista o IP de
-origem do pedido HTTP que efetuou o `POST /register` (só o payload
-declarado pelo próprio cliente). O resultado é uma falha silenciosa: o
-active-response é acionado, mas não produz qualquer efeito de contenção.
-
-Este resultado **confirma empiricamente, com dados reais e não apenas
-teoricamente, o risco já identificado na análise de superfície de ataque
-(Secção 4.1) de o próprio mecanismo de active-response se tornar um
-vetor de indisponibilidade**, estendido aqui a uma nova dimensão: nem é
-necessário um atacante induzir o bloqueio
-de um alvo errado para o active-response ser ineficaz; a simples ausência
-de um campo de IP extraível no pipeline de logs é suficiente para o
-tornar inoperante por omissão. A Secção 5.1.2 documenta a correção
-implementada, que substitui o `firewall-drop` por uma resposta que não
-depende de extração de IP.
+O Wazuh associa automaticamente o comando nativo `firewall-drop` a
+alertas de nível ≥ 10 (a regra 100100 está em `level="12"`). Este
+comando depende de um campo `srcip` extraído por um decoder a partir do
+alerta — como o formato de log da aplicação (`[+] <instance_id> ->
+<url>`) não expõe um IP de origem extraível, o `firewall-drop` não
+produz qualquer efeito de contenção real. A Secção 5.1.2 documenta a
+resposta própria implementada em substituição, independente de extração
+de IP.
 
 #### 5.1.2 Active-Response corrigido — remoção automática da entrada maliciosa
 
@@ -595,26 +543,15 @@ Associado à regra via:
 </active-response>
 ```
 
-**Nota técnica:** `<location>local</location>` não executou o script em
-nenhum teste; a correção foi usar `<location>server</location>`. A causa
-exata não foi isolada com certeza (pode ser particular da versão 4.14.9),
-mas a distinção é relevante o suficiente para documentar: nem toda a
-terminologia de "local vs. server" no active-response do Wazuh é
-intercambiável, apesar de o manager ser, neste caso, o único nó que
-precisa de executar o script.
-
-**Falso-positivo identificado e corrigido durante a implementação:** a
-regra 100100 original (`\[\+\].*storage-service`, sem distinção de
-origem) disparava também para os heartbeats legítimos do storage real
-(re-registo a cada ~15s via `register_service()` em `common.py`),
-acionando o active-response em loop contínuo — o sistema estava, na
-prática, a executar `DELETE /unregister` sobre si próprio a cada
-heartbeat, um caso real e medido de **self-inflicted DoS por
-active-response mal calibrado**, confirmando concretamente o risco de
-autodenegação de serviço por resposta automática já identificado na
-análise de superfície de ataque (Secção 4.1). A correção introduziu
-uma segunda regra, mais específica e de nível baixo, que intercepta
-registos de nós conhecidos antes da regra genérica disparar:
+A regra 100100 original, sem distinção de origem, disparava também para
+os heartbeats legítimos do storage real (re-registo a cada ~15s via
+`register_service()` em `common.py`), acionando `DELETE /unregister`
+sobre o próprio sistema a cada heartbeat — um caso real de
+autodenegação de serviço por resposta automática mal calibrada,
+confirmando o risco já identificado na análise de superfície de ataque
+(Secção 4.1). Foi introduzida uma segunda regra, mais específica e de
+nível baixo, que intercepta registos de nós legítimos conhecidos antes
+de a regra genérica disparar:
 
 ```xml
 <rule id="100101" level="3">
@@ -659,56 +596,12 @@ for ID in $IDS; do
 done
 ```
 
-**Obstáculo de implementação encontrado e resolvido:** a associação
-direta do active-response à regra-pai 100100 nunca invocava o script —
-confirmado por depuração extensiva (`execd.debug=2`), que revelou o
-`wazuh-execd` a referenciar um nome de comando corrompido
-(`remove-malicious-registry0`) sempre que a regra tinha uma regra-filha
-associada (100101, usada para marcar registos legítimos). A causa foi a
-relação pai-filha em si: o Wazuh entrega o active-response através do
-caminho de avaliação da regra que efetivamente "vence", não
-necessariamente a regra à qual o comando está formalmente associado no
-`ossec.conf`. A correção foi criar uma terceira regra-filha, dedicada ao
-caso malicioso (`100102`, com `match` negado face à 100101), e associar
-o active-response a essa regra específica — resolvendo o problema sem
-alterar as regras 100100/100101 já validadas, nem as respostas das
-Ameaças 2 e 3, que nunca tiveram este problema (as suas regras não têm
-filhas). **Confirmado em teste real:** a instância real permaneceu
+**Confirmado em teste real:** a instância real permaneceu
 ininterruptamente registada durante todo o ataque, sem qualquer janela
 de indisponibilidade — ao contrário da Ameaça 2, onde a mitigação
 continua a afetar temporariamente tráfego legítimo (Secção 5.2.1), a
 Ameaça 1 atinge aqui uma resposta corretiva sem efeitos colaterais
 mensuráveis.
-
-**Lacuna de cobertura identificada e fechada — padrão de remoção
-(Fase B):** as regras 100100/100101/100102 reconhecem apenas o padrão
-de **registo** (`[+] ... -> ...`, impresso por `register_service()` em
-`common.py`), deixando sem deteção o padrão de **remoção** explorado na
-Fase B da PoC (Secção 5.1, "Action-response adopted") — um atacante que
-chamasse `DELETE /unregister` sem nunca se ter registado primeiro não
-gerava qualquer alerta. Fechada com uma quarta regra, independente da
-hierarquia pai-filha anterior (evitando deliberadamente o mesmo bug de
-associação já identificado):
-
-```xml
-<rule id="100103" level="10">
-  <if_sid>1</if_sid>
-  <match type="pcre2">\[\-\].*unregistered</match>
-  <description>SSLE: remoção de storage-service detetada (possível DoS via unregister)</description>
-  <group>ssle_hijacking,</group>
-</rule>
-```
-
-**Confirmado em teste real** (`DELETE /unregister` isolado, sem registo
-prévio do atacante): `Rule: 100103 (level 10) -> 'SSLE: remoção de
-storage-service detetada (possível DoS via unregister)'`, com a
-instância real a recuperar via heartbeat ~15s depois, como já
-documentado na PoC original. Esta regra é de deteção apenas (nível
-"Detective", sem active-response associado) — a mitigação efetiva da
-remoção em massa depende de uma correção aplicacional ao `registry.py`
-(exigir `instance_id` em `/unregister`), já identificada como
-countermeasure na ADTree da Secção 4.2, e não de uma resposta reativa
-do SIEM.
 
 **Nota adicional — deteção mais rápida do que o ciclo de observação da
 PoC:** numa reexecução posterior da Fase A (com a deteção e o
@@ -716,7 +609,7 @@ active-response já permanentemente ativos, não apenas durante os testes
 dedicados acima), as 6 leituras consecutivas de `get_service()` ao
 longo de 6 segundos devolveram sempre a instância real, nunca a
 maliciosa — ao contrário do comportamento alternado documentado na
-execução original (Secção 5.1, "Action-response adopted"), feita antes
+execução original (Secção 5.1, "Resposta adotada"), feita antes
 de existir qualquer deteção. A explicação é a própria correção: a
 instância maliciosa foi detetada e removida pela regra 100102 antes de
 a primeira leitura do round-robin ocorrer, coerente com o intervalo de
@@ -736,65 +629,72 @@ ataque e a resposta.
 
 ### 5.2 Ameaça 2 — Massive Denial-of-Service
 
-- **Description of the threat:**
-  Two distinct vectors converge on the same impact. (1) Low-volume: `GET
-  /anomalies?limit=-1` is forwarded unvalidated from `analytics.py` to
-  `storage.py`, where SQLite interprets `LIMIT -1` as unbounded, forcing a
-  full-table dump per request (CWE-770). (2) Volume-based: `POST /ingest`
-  has no rate limiting; each request triggers a synchronous `discover()`
-  call against the Service Registry, amplifying load onto the
-  single-instance registry (SPOF, in-memory state). Werkzeug's development
-  server (single-threaded by default) and low Kubernetes CPU limits (250m)
-  lower the threshold further.
+- **Descrição da ameaça:**
+  Dois vetores distintos convergem para o mesmo impacto. (1) Baixo
+  volume: `GET /anomalies?limit=-1` é reencaminhado sem validação de
+  `analytics.py` para `storage.py`, onde o SQLite interpreta `LIMIT -1`
+  como sem limite, forçando um dump completo da tabela por pedido
+  (CWE-770). (2) Baseado em volume: `POST /ingest` não tem qualquer
+  limitação de taxa; cada pedido despoleta uma chamada síncrona a
+  `discover()` contra o Service Registry, amplificando a carga sobre o
+  registry de instância única (SPOF, estado em memória). O servidor de
+  desenvolvimento do Werkzeug (single-threaded por omissão) e os limites
+  reduzidos de CPU do Kubernetes (250m) baixam ainda mais o limiar
+  necessário.
 
-- **Why is it relevant to the system?**
-  "Massive denial-of-service disruptions" is an explicit threat in the
-  course syllabus. In this architecture the impact is compounded by
-  architectural choices specific to the system: a single point of
-  amplification (the registry, queried on every ingest) and a single
-  point of persistence (SQLite behind one Storage replica), meaning even
-  a low-volume attack can degrade the entire pipeline, not just the
-  endpoint it targets directly.
+- **Porque é relevante para o sistema?**
+  "Massive denial-of-service disruptions" é uma ameaça explícita no
+  syllabus da cadeira. Nesta arquitetura, o impacto é agravado por
+  escolhas de design específicas do sistema: um único ponto de
+  amplificação (o registry, consultado a cada ingestão) e um único ponto
+  de persistência (SQLite atrás de uma réplica de Storage), o que
+  significa que mesmo um ataque de baixo volume pode degradar todo o
+  pipeline, não apenas o endpoint diretamente visado.
 
-- **How can it be exploited?**
-  - **Attack Path 1 — Unbounded query via negative limit parameter:**
-    `GET /anomalies?limit=-1` (analytics-service, port 5003) forwards the
-    `limit` parameter unvalidated to `GET /temperatures` on
-    storage-service. SQLite interprets "LIMIT -1" as no limit, forcing a
-    full table scan and serialization of every stored reading in a single
-    request.
-  - **Attack Path 2 — Unthrottled flood against /ingest amplified by
-    registry lookups:** `POST /ingest` (ingestion-service, port
-    5001/NodePort 30001) has no authentication, no rate limiting, and no
-    request size cap. Each request triggers a synchronous `discover()`
-    call to the Service Registry, so request volume is amplified onto the
-    single-replica, in-memory registry (SPOF). Low Kubernetes CPU limits
-    (250m per pod) and Werkzeug's default single-threaded dev server
-    lower the volume needed to cause saturation.
+- **Como pode ser explorada?**
+  - **Vetor de Ataque 1 — Consulta sem limite via parâmetro limit
+    negativo:** `GET /anomalies?limit=-1` (analytics-service, porta 5003)
+    reencaminha o parâmetro `limit` sem validação para `GET
+    /temperatures` no storage-service. O SQLite interpreta "LIMIT -1"
+    como sem limite, forçando uma leitura completa da tabela e a
+    serialização de todas as leituras armazenadas num único pedido.
+  - **Vetor de Ataque 2 — Flood sem limitação contra /ingest, amplificado
+    por consultas ao registry:** `POST /ingest` (ingestion-service,
+    porta 5001/NodePort 30001) não tem autenticação, limitação de taxa,
+    nem limite de tamanho de pedido. Cada pedido despoleta uma chamada
+    síncrona a `discover()` ao Service Registry, pelo que o volume de
+    pedidos é amplificado sobre o registry de réplica única e estado em
+    memória (SPOF). Os limites reduzidos de CPU do Kubernetes (250m por
+    pod) e o servidor de desenvolvimento single-threaded do Werkzeug,
+    por omissão, reduzem o volume necessário para causar saturação.
   - ADTree: `adtrees-ssle-projeto1.md`, árvore 2 (disjunctive refinement —
-    qualquer um dos 2 paths é suficiente)
+    qualquer um dos 2 vetores é suficiente)
 
 ![ADTree 2 — DDoS](images/adtree2-ddos.png)
 
-- **Relevant monitoring/mitigation actions/metrics:**
-  - Enforce `1 <= limit <= 1000` in `storage.py` and `analytics.py`
-    (Development, Low effort, Preventive): closes Attack Path 1.
-  - Rate limiting on `/ingest` (Development, Medium effort, Preventive):
-    per-IP or per-`device_id`, e.g. Flask-Limiter.
-  - Decouple service registry discovery (Development, Medium effort,
-    Preventive): client-side discovery cache with TTL, circuit breakers.
-  - Replace Werkzeug with production WSGI server (Configuration, Low
-    effort, Preventive): gunicorn/uWSGI with multiple workers.
-  - Tune Kubernetes resource requests/limits (Configuration, Low effort,
-    Preventive).
-  - Configure Zabbix/Wazuh alerts for DDoS indicators (Configuration,
-    Medium effort, Detective): request-rate spikes on `/ingest` e
-    `/anomalies`, latência do registry, taxa de 5xx, duração de queries
-    SQLite.
+- **Ações/métricas relevantes de monitorização e mitigação:**
+  - Impor `1 <= limit <= 1000` em `storage.py` e `analytics.py`
+    (Desenvolvimento, Esforço Baixo, Preventiva): fecha o Vetor de
+    Ataque 1.
+  - Limitação de taxa em `/ingest` (Desenvolvimento, Esforço Médio,
+    Preventiva): por IP ou por `device_id`, por exemplo com
+    Flask-Limiter.
+  - Desacoplar a descoberta do service registry (Desenvolvimento,
+    Esforço Médio, Preventiva): cache de descoberta do lado do cliente
+    com TTL, circuit breakers.
+  - Substituir o Werkzeug por um servidor WSGI de produção
+    (Configuração, Esforço Baixo, Preventiva): gunicorn/uWSGI com vários
+    workers.
+  - Afinar os pedidos/limites de recursos do Kubernetes (Configuração,
+    Esforço Baixo, Preventiva).
+  - Configurar alertas Zabbix/Wazuh para indicadores de DDoS
+    (Configuração, Esforço Médio, Detetiva): picos de taxa de pedidos em
+    `/ingest` e `/anomalies`, latência do registry, taxa de 5xx, duração
+    de queries SQLite.
   - Métricas concretas implementadas e confirmadas: taxa de pedidos
     (Zabbix) e frequência de eventos (Wazuh) — ver Secção 5.2.1.
 
-- **Action-response adopted:**
+- **Resposta adotada:**
   PoC executada a partir do contentor `attacker` (10.255.255.184), com
   dois vetores testados isoladamente e em sequência contra os NodePorts
   do `analytics-service` (30003) e `ingestion-service` (30001).
@@ -824,7 +724,7 @@ ataque e a resposta.
   sistema recuperou (`GET /health` voltou a responder 200), confirmando
   que a degradação foi temporária e não um colapso permanente.
 
-- **Post-mortem of PoC:**
+- **Post-mortem da PoC:**
   - **Impacto observado:** DoS parcial e reprodutível, não um colapso
     total — a taxa de falha variou entre 0% e 76.5% consoante o estado
     de saturação prévio do sistema, mostrando que o impacto de um
@@ -847,8 +747,9 @@ ataque e a resposta.
     estava operacional outra vez no momento da verificação.
   - **Nenhum controlo de deteção estava ativo durante a PoC**: a
     degradação e a recuperação ocorreram sem qualquer alerta gerado,
-    confirmando a prioridade de `Configure Zabbix/Wazuh alerts for DDoS
-    indicators` definida em "Relevant monitoring/mitigation actions/metrics".
+    confirmando a prioridade de `Configurar alertas Zabbix/Wazuh para
+    indicadores de DDoS` definida em "Ações/métricas relevantes de
+    monitorização e mitigação".
   - **Limitação identificada:** a ausência de rate limiting significa que
     o comportamento observado (degradação progressiva com repetição) é
     inteiramente dependente do timing das execuções do atacante, não de
@@ -863,7 +764,7 @@ ataque e a resposta.
     automática a este mesmo vetor está em `evidencia/poc2-resposta-final/`
     (Secção 5.2.1).
 
-#### 5.2.1 Detection and Active-Response (Phase 4)
+#### 5.2.1 Deteção e Resposta Automática (Fase 4)
 
 Ao contrário da Ameaça 1 (deteção por padrão de conteúdo), o sinal
 relevante aqui é **volume/taxa** — pelo que a deteção foi implementada em
@@ -909,20 +810,12 @@ Item:    log[/var/log/ingestion-stream.log,"POST \/ingest",,,skip]
 Trigger: count(/ssle-k3s-cluster/log[...],10s)>20
 ```
 
-**Achado técnico — tentativa falhada de métrica de CPU:** a primeira
-abordagem para o sinal Zabbix usou CPU do pod (`kubectl top pods`, via
-`UserParameter`), com um trigger `>15` millicores. O flood de 50 pedidos
-em paralelo, mesmo repetido de forma sustida (10 rajadas de 20 pedidos),
-não produziu qualquer variação de CPU mensurável (3m→3m): a aplicação
-Flask é demasiado leve e o `metrics-server` do Kubernetes tem o seu
-próprio ciclo de amostragem, independente e mais lento do que o
-necessário para captar rajadas curtas. **Esta tentativa falhada motivou
-a escolha de um sinal baseado em taxa de pedidos (log-based) em vez de
-utilização de recursos** — uma decisão de design documentada, não
-escondida, que reforça que a observabilidade de FCAPS tradicional
-(métricas de recursos) não é necessariamente o sinal mais adequado para
-detetar ataques aplicacionais de curta duração; taxa de eventos é mais
-sensível neste contexto.
+**Decisão de design — sinal baseado em taxa de pedidos:** optou-se por
+uma métrica baseada em taxa de pedidos (log-based) em vez de utilização
+de recursos (CPU/memória) para o sinal Zabbix — a observabilidade de
+FCAPS tradicional (métricas de recursos) não é necessariamente o sinal
+mais adequado para detetar ataques aplicacionais de curta duração; taxa
+de eventos é mais sensível neste contexto.
 
 **Achado relevante — confirmação empírica do SNAT:** os IPs de
 origem capturados nos logs durante o flood foram `10.42.0.0`/`10.42.0.1`
@@ -983,59 +876,15 @@ ACCEPT  tcp  --  0.0.0.0/0  0.0.0.0/0  tcp dpt:30001  limit: avg 10/sec burst 5
 DROP    tcp  --  0.0.0.0/0  0.0.0.0/0  tcp dpt:30001
 ```
 
-**Nota técnica:** tal como na Ameaça 1, `<location>local</location>`
-não produziu execução alguma; a correção foi `<location>server</location>`.
+A expiração da regra de rate-limit é autogerida pelo próprio
+`responder.py`, com um temporizador (`threading.Timer(60,
+delete_rule)`) disparado a cada `/add`, que remove o par de regras
+aplicado sem depender de nenhuma chamada adicional do Wazuh.
+**Confirmado em teste real:** num novo flood, a regra está presente aos
+10s e **ausente aos 75s**, sem qualquer comando manual entre as duas
+verificações.
 
-**Falha identificada e corrigida — o `<timeout>` nativo do Wazuh nunca
-expira esta regra:** uma reexecução prolongada do teste acima (várias
-chamadas ao longo de ~30 minutos) revelou que as regras de `iptables`
-nunca eram removidas automaticamente, acumulando um par `ACCEPT`+`DROP`
-por cada disparo (21 pares observados numa sessão de testes). A causa
-raiz, confirmada via `execd.debug=2`, não está no script de
-active-response, mas no próprio Wazuh:
-```
-DEBUG: Active response won't be added to timeout list. Message not
-received with alert keys from script 'active-response/bin/throttle-ingest.sh'
-```
-O Wazuh só agenda a expiração automática de um active-response quando
-consegue extrair *alert keys* (campos como `srcip`) do alerta via um
-decoder — exatamente a mesma limitação já identificada na Secção 5.1.1
-para o `firewall-drop` (ausência de decoder customizado a estruturar o
-log em texto simples), aqui com uma consequência diferente: em vez de o
-bloqueio falhar, é a **remoção automática** que nunca é agendada,
-confirmado nas três invocações observadas (`"command":"add"` sempre, a
-chamada de expiração em modo `delete` nunca ocorreu). Adicionalmente,
-identificou-se no próprio `responder.py` uma verificação de idempotência
-(`iptables -C` antes do `-I`) cujo resultado era descartado sem nunca
-condicionar a inserção — agravando a acumulação independentemente da
-causa do Wazuh.
-
-A correção não dependeu de resolver a limitação do Wazuh (fora do
-âmbito de um decoder customizado nesta entrega) — a expiração passou a
-ser autogerida pelo próprio `responder.py`, com um temporizador
-(`threading.Timer(60, delete_rule)`) disparado a cada `/add`, removendo
-exatamente o par de regras aplicado, sem depender de nenhuma segunda
-chamada do Wazuh:
-
-**Confirmado em teste real, após a correção:** novo flood aplicado,
-regra presente aos 10s, **ausente aos 75s**, sem qualquer comando manual
-entre as duas verificações — confirmando que a expiração é agora
-genuinamente automática e independente do mecanismo nativo do Wazuh
-(que permanece, ele próprio, inoperante para esta regra).
-
-**Limitação documentada:** o rate-limit aplica-se a **todo** o tráfego
-para o NodePort 30001, incluindo o sensor legítimo, durante a janela de
-60s — uma mitigação de disponibilidade parcial e temporária, não uma
-resolução cirúrgica do ataque (coerente com o facto de o IP de origem
-real não poder ser isolado, achado acima). Este achado soma-se aos já
-documentados nas Secções 4.1 e 5.1.1/5.1.2 de o próprio active-response
-poder tornar-se, por si só, um vetor de risco adicional — aqui não por
-excesso de ação (como o `DELETE /unregister` em loop da Ameaça 1), mas
-por **ausência silenciosa de limpeza**, um modo de falha menos óbvio
-porque não produz nenhum erro visível nos logs do Wazuh, só a
-acumulação progressiva de estado no sistema protegido.
-
-- Evidência (Fase 4 — deteção, bug do timeout e correção confirmada):
+- Evidência (Fase 4 — deteção e resposta automática confirmadas):
   `evidencia/poc2-resposta-final/01-vetor1-timing.txt`,
   `02-wazuh-deteccao.txt`, `03-iptables-throttle.txt`,
   `04-vetor2-sob-throttle-ativo.txt`, `05-bug-timeout-execd-debug.txt`,
@@ -1043,42 +892,44 @@ acumulação progressiva de estado no sistema protegido.
 
 ### 5.3 Ameaça 3 — Botnets / Data Fraud
 
-- **Description of the threat:**
-  `GET /services` on the registry discloses internal pod IPs (bypassing
-  the ClusterIP abstraction). With the Storage pod's real address, an
-  attacker writes directly to `POST /store`, which performs no type or
-  range validation independently of `ingestion.py` — the validation
-  implemented there (temperature range, `device_id` truncation) is
-  entirely bypassed. No credential or identity is tied to `device_id`,
-  enabling impersonation of an arbitrary number of fabricated sensors
-  (botnet simulation) and poisoning of analytics-service outputs
+- **Descrição da ameaça:**
+  `GET /services` no registry revela os IPs internos dos pods
+  (contornando a abstração do ClusterIP). Com o endereço real do pod
+  Storage, um atacante escreve diretamente em `POST /store`, que não
+  realiza qualquer validação de tipo ou gama independente de
+  `ingestion.py` — a validação aí implementada (gama de temperatura,
+  truncagem de `device_id`) é totalmente contornada. Não existe
+  credencial ou identidade associada a `device_id`, permitindo a
+  personificação de um número arbitrário de sensores forjados (simulação
+  de botnet) e o envenenamento dos resultados do analytics-service
   (`/average`, `/anomalies`).
 
-- **Why is it relevant to the system?**
-  Covers both "Botnets" and "Reputation Systems" from the syllabus: the
-  lack of per-device identity means `device_id` functions as an
-  unauthenticated reputation claim, and the architecture has no mechanism
-  to distinguish a real sensor fleet from an arbitrarily large forged one.
-  This directly undermines the trustworthiness of Analytics outputs,
-  which downstream monitoring and root-cause analysis would otherwise
-  rely on.
+- **Porque é relevante para o sistema?**
+  Abrange "Botnets" e "Reputation Systems" do syllabus: a ausência de
+  identidade por dispositivo significa que `device_id` funciona como uma
+  afirmação de reputação não autenticada, e a arquitetura não tem
+  qualquer mecanismo para distinguir uma frota real de sensores de uma
+  forjada e arbitrariamente grande. Isto compromete diretamente a
+  fiabilidade dos resultados do Analytics, dos quais a monitorização e a
+  análise de causa-raiz a jusante dependeriam.
 
-- **How can it be exploited?**
-  - **Attack Path 1 — Internal pod IP disclosure via unauthenticated GET
-    /services:** `GET /services` on the registry returns full internal
-    state including pod IPs (e.g. `10.42.1.46:5002` for
-    `storage-service`), bypassing the Kubernetes ClusterIP abstraction
-    (storage Service is `type=ClusterIP`, intended to be the only path to
-    the Storage pod).
-  - **Attack Path 2 — Direct unauthenticated write to Storage, bypassing
-    Ingestion validation:** `POST /store` (storage-service) performs no
-    type or range validation independent of `ingestion.py`. An attacker
-    with the pod IP from Path 1 writes directly to `/store`, bypassing
-    all validation implemented in `ingestion.py` (temperature range
-    check, `device_id` truncation). No credential is bound to
-    `device_id`, allowing impersonation of an arbitrary number of
-    fabricated sensors and poisoning of analytics-service's `/average`
-    and `/anomalies` outputs.
+- **Como pode ser explorada?**
+  - **Vetor de Ataque 1 — Divulgação de IP interno de pod via GET
+    /services não autenticado:** `GET /services` no registry devolve o
+    estado interno completo, incluindo IPs de pods (por exemplo,
+    `10.42.1.46:5002` para `storage-service`), contornando a abstração
+    ClusterIP do Kubernetes (o Service do storage é `type=ClusterIP`,
+    pensado para ser o único caminho até ao pod Storage).
+  - **Vetor de Ataque 2 — Escrita direta não autenticada no Storage,
+    contornando a validação do Ingestion:** `POST /store`
+    (storage-service) não realiza qualquer validação de tipo ou gama
+    independente de `ingestion.py`. Um atacante com o IP do pod obtido no
+    Vetor 1 escreve diretamente em `/store`, contornando toda a validação
+    implementada em `ingestion.py` (verificação da gama de temperatura,
+    truncagem de `device_id`). Não há credencial associada a `device_id`,
+    permitindo a personificação de um número arbitrário de sensores
+    forjados e o envenenamento dos resultados `/average` e `/anomalies`
+    do analytics-service.
   - ADTree: `adtrees-ssle-projeto1.md`, árvore 3 — **conjunctive
     refinement**: ao contrário das ameaças 1 e 2, os dois passos são
     ambos necessários (AND), o que reduz estruturalmente a probabilidade
@@ -1087,29 +938,30 @@ acumulação progressiva de estado no sistema protegido.
 
 ![ADTree 3 — Botnet/Fraude de Dados](images/adtree3-botnet-fraude.png)
 
-- **Relevant monitoring/mitigation actions/metrics:**
-  - Do not expose internal pod URLs in unauthenticated registry reads
-    (Development, Low effort, Preventive): closes Attack Path 1 — e, por
-    ser o primeiro elo da cadeia AND, é suficiente para neutralizar o
-    ataque completo (ver 4.4).
-  - NetworkPolicy restricting Storage pod ingress (Configuration, Low
-    effort, Preventive): apenas `ingestion-service` e `analytics-service`
-    podem alcançar o Storage.
-  - Replicate type/range validation inside `storage.py` (Development, Low
-    effort, Preventive): defesa em profundidade, independente do Path 1.
-  - Per-device credential bound to `device_id` (Development, High effort,
-    Preventive): token ou certificado por sensor.
-  - Anomaly scoring on `device_id` cardinality (Configuration, Medium
-    effort, Detective): deteção de picos de `device_id` distintos por
-    janela temporal, sinal de frota de sensores forjada.
+- **Ações/métricas relevantes de monitorização e mitigação:**
+  - Não expor URLs internos de pods em leituras não autenticadas do
+    registry (Desenvolvimento, Esforço Baixo, Preventiva): fecha o Vetor
+    de Ataque 1 — e, por ser o primeiro elo da cadeia AND, é suficiente
+    para neutralizar o ataque completo (ver 4.4).
+  - NetworkPolicy que restrinja o ingress do pod Storage (Configuração,
+    Esforço Baixo, Preventiva): apenas `ingestion-service` e
+    `analytics-service` podem alcançar o Storage.
+  - Replicar a validação de tipo/gama dentro de `storage.py`
+    (Desenvolvimento, Esforço Baixo, Preventiva): defesa em profundidade,
+    independente do Vetor 1.
+  - Credencial por dispositivo associada a `device_id` (Desenvolvimento,
+    Esforço Alto, Preventiva): token ou certificado por sensor.
+  - Deteção de anomalias na cardinalidade de `device_id` (Configuração,
+    Esforço Médio, Detetiva): deteção de picos de `device_id` distintos
+    por janela temporal, sinal de frota de sensores forjada.
   - Deteção e resposta automática implementadas e confirmadas em
     produção — ver Secção 5.3.1.
 
-- **Action-response adopted:**
+- **Resposta adotada:**
   PoC executada em duas fases, com um refinamento de rede descoberto a
   meio da execução (ver nota metodológica abaixo).
 
-  **Fase A — Disclosure (Attack Path 1):**
+  **Fase A — Disclosure (Vetor de Ataque 1):**
   ```
   GET /services/storage-service  (via NodePort, do contentor attacker)
   → url: "http://10.42.1.65:5002"
@@ -1131,7 +983,7 @@ acumulação progressiva de estado no sistema protegido.
   vulnerabilidade: um único pod comprometido (por qualquer outro vetor)
   dá acesso irrestrito a todos os outros serviços pela mesma via.
 
-  **Fase B — Escrita direta, bypass da validação (Attack Path 2):**
+  **Fase B — Escrita direta, bypass da validação (Vetor de Ataque 2):**
   ```
   POST http://10.42.1.65:5002/store (a partir de k3s-master)
   {"device_id":"botnet-spoof-001","temperature":999.0}
@@ -1144,7 +996,7 @@ acumulação progressiva de estado no sistema protegido.
   (`bot-1`...`bot-15`), com temperaturas aleatórias entre 100°C e 500°C,
   foram injetados da mesma forma, todos com `200 {"status":"stored"}`.
 
-- **Post-mortem of PoC:**
+- **Post-mortem da PoC:**
   - **Impacto observado, quantificado:**
 
     | Métrica | Antes da injeção | Depois (16 dispositivos forjados) |
@@ -1181,7 +1033,7 @@ acumulação progressiva de estado no sistema protegido.
     registadas em tempo real durante a execução e não preservadas como
     ficheiros autónomos separados.)
 
-#### 5.3.1 Detection and Active-Response (Phase 4)
+#### 5.3.1 Deteção e Resposta Automática (Fase 4)
 
 Ao contrário das Ameaças 1 e 2, não existe no código da aplicação um
 registo textual do conteúdo malicioso em si (o `storage.py` não escreve
