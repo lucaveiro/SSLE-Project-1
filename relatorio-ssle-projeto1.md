@@ -779,6 +779,8 @@ Zabbix:  Trigger "Ingestion: request rate" -> PROBLEM (count(...,10s)>20)
 
 ![Deteção da Ameaça 2 no Wazuh — volume de pedidos a /ingest](<evidencias-detecao/Deteção Ameaça 2 (Wazuh).png>)
 
+![Deteção da Ameaça 2 no Zabbix — problema "request rate" (severidade Warning) no host ssle-k3s-cluster](<evidencias-detecao/Deteção Ameaça 2 (Zabbix nativo).png>)
+
 **Active-response — rate-limit no destino:** dado que o IP de origem não
 é fiável (achado acima), a resposta implementada não tenta bloquear o
 atacante — aplica um limite de taxa diretamente no NodePort do destino
