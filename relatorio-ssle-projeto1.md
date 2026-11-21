@@ -130,13 +130,6 @@ ex: pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth
 Propaga-se como campo `location` no Service Registry:
 - **Localização física/lógica:** país → região → datacenter → rack → node.
 - **Delegação geográfica:** campos independentes por nível.
-- **Monitorização por localização / bónus de largura de banda:** chegou a
-  desenhar-se uma arquitetura de agregação por site (proxy Zabbix por
-  região, com recolha local e envio agregado) para cumprir este
-  requisito-bónus, mas não ficou implementada nesta entrega. O agente
-  Zabbix usado (Secção 3.4) liga diretamente ao server através do NAT
-  existente, sem agregação intermédia. Fica assim identificado como
-  trabalho não concluído, e não como requisito ignorado.
 - **Localização rápida da origem de um incidente:** o `instance_id` é a
   chave de correlação partilhada entre o registry, os logs e o SIEM.
 
