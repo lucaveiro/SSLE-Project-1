@@ -1184,23 +1184,6 @@ apareceu dentro da janela de poucos segundos usada nos testes (`sleep
 latência sob carga elevada e sustentada (por exemplo, milhares de eventos
 por segundo), pelo que esta conclusão vale apenas para a escala testada.
 
-### 6.4 Limitações da avaliação de escalabilidade
-
-Por restrição de tempo e de recursos computacionais do laboratório, os
-seguintes aspetos ficam fora do âmbito desta avaliação e são assumidos como
-limitação, não como resultado:
-
-- **Cardinalidade de séries temporais** sob um número elevado de
-  dispositivos/instâncias (testado apenas até ~16 `device_id` simultâneos
-  na Secção 5.3) não foi avaliada ao ponto de observar degradação.
-- **Escalabilidade do próprio Registry e do Storage** (as componentes
-  identificadas como SPOF nas Secções 5.2 e 7) não foi testada, por não ter
-  sido implementada réplica adicional para estes dois componentes.
-- **Throughput sustentado do SIEM** foi validado apenas para picos curtos
-  (dezenas de segundos), não para carga contínua ao longo de horas, que é o
-  cenário em que a capacidade de 3.26 NVPS do Zabbix ou os limites internos
-  do `wazuh-analysisd` poderiam efetivamente ser testados.
-
 ---
 
 ## 7. Conclusions
@@ -1223,8 +1206,8 @@ confirmando que o seu desenho stateless não é, por si só, uma limitação. O
 ponto de risco transversal identificado nas PoCs de ataque mantém-se, no
 entanto, precisamente nos componentes que não foram, nem podiam ser no
 âmbito deste projeto, escalados ou corrigidos aqui: o Service Registry e o
-Storage, ambos de réplica única e com estado não partilhado (Secção 3.3,
-6.4). Escalar o `ingestion` sozinho melhora o throughput dessa camada, mas
+Storage, ambos de réplica única e com estado não partilhado (Secção 3.3).
+Escalar o `ingestion` sozinho melhora o throughput dessa camada, mas
 não resolve o ponto único de falha que concentra o risco de segurança do
 sistema.
 
