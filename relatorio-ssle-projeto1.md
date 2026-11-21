@@ -1086,7 +1086,7 @@ original, com ou sem a resposta do Wazuh a correr. É uma limitação relevante
 a reportar: das três respostas implementadas, apenas duas (Ameaças 1 e 2)
 resolvem a causa do alerta; a terceira (Ameaça 3) só o documenta, deixando a
 remediação efetiva, por exemplo um endpoint `DELETE /temperatures/<id>` no
-Storage, como trabalho futuro.
+Storage, por implementar.
 
 - Evidência (Fase 4 — deteção e quarentena confirmadas):
   `evidencia/poc3-resposta-final/01-injecao.txt`, `02-poller-anomaly.txt`,
@@ -1147,12 +1147,13 @@ de inatividade entre PoCs), foram processados `events_received = 82647`,
 `events_processed = 81686`, com `events_dropped = 0`: nenhum evento foi
 descartado por sobrecarga, mesmo durante os floods concentrados da Secção
 5.2. Das regras específicas deste projeto (IDs 100100–100300), foram
-gerados 4397 eventos no total. O throughput médio ao longo de toda a sessão
-(0.068 eventos/s) não é representativo da capacidade real, por incluir
-longos períodos sem tráfego; o indicador mais relevante é `events_dropped =
-0` sob os picos de carga efetivamente testados (até 200 pedidos em
-paralelo), que confirma que o pipeline de deteção acompanhou a carga gerada
-nesta escala sem perdas.
+gerados 1694 eventos no total, confirmado no dashboard Threat Hunting com o
+filtro `rule.id >= 100100 and rule.id <= 100300` (janela das últimas 24h).
+O throughput médio ao longo de toda a sessão não é representativo da
+capacidade real, por incluir longos períodos de inatividade entre PoCs; o
+indicador mais relevante é `events_dropped = 0` sob os picos de carga
+efetivamente testados (até 200 pedidos em paralelo), que confirma que o
+pipeline de deteção acompanhou a carga gerada nesta escala sem perdas.
 
 **Zabbix:** o painel *System information* reporta `Required server
 performance: 3.26 new values per second`, com 145 items ativos (136
@@ -1193,9 +1194,8 @@ limitação, não como resultado:
   dispositivos/instâncias (testado apenas até ~16 `device_id` simultâneos
   na Secção 5.3) não foi avaliada ao ponto de observar degradação.
 - **Escalabilidade do próprio Registry e do Storage** (as componentes
-  identificadas como SPOF nas Secções 5.2 e 7) não foi testada por não ter
-  sido implementada réplica adicional; fica como trabalho direto para o
-  Projeto 2.
+  identificadas como SPOF nas Secções 5.2 e 7) não foi testada, por não ter
+  sido implementada réplica adicional para estes dois componentes.
 - **Throughput sustentado do SIEM** foi validado apenas para picos curtos
   (dezenas de segundos), não para carga contínua ao longo de horas, que é o
   cenário em que a capacidade de 3.26 NVPS do Zabbix ou os limites internos
@@ -1271,15 +1271,6 @@ testados como a fiabilidade da própria monitorização:
   deteção de segurança não deve depender de mecanismos aplicacionais
   pontuais, mas de um SIEM com janela de correlação alargada.
 
-### Trabalho futuro
-
-As limitações acima, em particular os SPOFs do Registry e do Storage, são o
-ponto de partida natural para o Projeto 2, que reutilizará esta mesma
-arquitetura sob o tema de tolerância a ataques: réplicas com estado
-partilhado, mecanismos de consenso ou quorum para o registry, e redundância
-do volume de dados são passos diretos a partir do que aqui foi identificado
-como limitação, e não como trabalho em separado.
-
 ---
 
 ## Anexos
@@ -1292,3 +1283,7 @@ como limitação, e não como trabalho em separado.
 - D. Capturas de ecrã de deteção Wazuh/Zabbix (`evidencias-detecao/`)
 - E. Evidência do teste de escalabilidade, Secção 6.1
   (`evidencia/poc-scaling-2-replicas.txt`, `evidencia/poc-scaling-4-replicas.txt`)
+- F. Evidência do throughput/capacidade do SIEM, Secção 6.2
+  (`evidencia/wazuh-analysisd-state.txt`,
+  `evidencias-detecao/threat-hunting-regras-ssle.png`,
+  `evidencias-detecao/zabbix-system-information.png`)
