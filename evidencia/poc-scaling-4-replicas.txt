@@ -1,0 +1,59 @@
+Teste de escalabilidade horizontal - ingestion-service, 4 réplicas (21/11/2026)
+Comando: 25 pedidos concorrentes a POST /ingest, device_id distinto por pedido
+(isola do rate-limiter aplicacional por device_id e do throttle-ingest da
+Ameaça 2 - ver Secção 6.1 do relatório). iptables confirmado vazio antes do
+teste (sem contaminação residual do responder.py).
+
+Comando para reproduzir (correr na VM ssle, depois do teste de 2 réplicas,
+com uma pausa de ~90s entre os dois para a janela de deteção Wazuh 100201
+expirar por completo):
+
+  sleep 90
+  incus exec k3s-master -- kubectl -n ssle scale deploy ingestion --replicas=4
+  sleep 15
+  time (
+    for i in $(seq 1 25); do
+      curl -s -o /dev/null -w "%{http_code} %{time_total}\n" -X POST "http://10.255.255.42:30001/ingest" \
+        -H "Content-Type: application/json" -d "{\"device_id\":\"sensor-$i\",\"temperature\":25.0}" &
+    done
+    wait
+  ) | tee poc-scaling-4-replicas.txt
+  incus exec k3s-master -- iptables -L INPUT -n | grep 30001   # deve vir vazio
+
+Pré-requisito: confirmar "iptables -L INPUT -n | grep 30001" vazio ANTES de
+correr o teste (garante que não há rate-limit residual do throttle-ingest da
+Ameaça 2 a contaminar a medição).
+
+Resultado (código HTTP e tempo de resposta, em segundos, por pedido):
+
+200 0.148681
+200 0.183276
+200 0.155520
+200 0.142102
+200 0.218282
+200 0.194821
+200 0.252356
+200 0.195323
+200 0.282250
+200 0.344379
+200 0.499131
+200 0.510940
+200 0.423736
+200 0.804909
+200 0.795443
+200 0.657201
+200 0.905162
+200 0.927996
+200 0.976618
+200 0.913463
+200 1.148430
+200 1.114746
+200 1.206475
+200 1.135399
+200 1.279684
+
+real	0m2,281s
+user	0m1,114s
+sys	0m0,543s
+
+Média de latência: 0.617s | Máximo: 1.280s | Falhas: 0/25

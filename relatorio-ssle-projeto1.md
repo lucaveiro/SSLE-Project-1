@@ -1122,30 +1122,48 @@ no Storage — como trabalho futuro.
 ### 6.1 Escalabilidade horizontal da aplicação
 
 Para avaliar se a arquitetura escala da forma esperada pelo slide 3 do
-enunciado, repetiu-se o flood da Secção 5.2 (200 pedidos a `/ingest`,
-20 em paralelo) com 2 réplicas de `ingestion`, depois escalou-se para 4
-réplicas (`kubectl scale deploy ingestion --replicas=4`) e repetiu-se o
-mesmo teste:
+enunciado, mediu-se o tempo de resposta do `ingestion` sob carga
+concorrente com 2 e depois 4 réplicas (`kubectl scale deploy ingestion
+--replicas=N`). As primeiras tentativas, repetindo o flood da Secção 5.2
+(200 pedidos a `/ingest`, mesma origem), deram resultados contaminados
+por dois mecanismos de defesa que ficam ativos durante o próprio teste:
+o `throttle-ingest` (Ameaça 2, Secção 5.2.1) e um rate-limiter
+aplicacional por `device_id` já presente no `ingestion-service` em
+produção (5 pedidos/10s por origem — ver nota de limitação abaixo). Para
+isolar o efeito puro de escalabilidade, o teste final usa um `device_id`
+distinto por pedido (simulando uma frota de sensores reais, não uma
+única origem) e mantém o volume total abaixo do limiar de deteção da
+regra 100201 (30 pedidos/10s), para não acionar a resposta automática a
+meio da medição.
 
-| Réplicas de `ingestion` | Falhas (502) em 200 pedidos | Taxa |
-|---|---|---|
-| 2 | 0 | 0% |
-| 4 | 2 | 1% |
+Com 25 pedidos concorrentes a `/ingest`:
 
-**Resultado contraintuitivo, mas explicável:** duplicar as réplicas do
-`ingestion` não melhorou a resiliência — piorou-a ligeiramente. Isto
-confirma empiricamente um argumento já feito nas Secções 4.1 e 5.2: o gargalo real
-do sistema não é o `ingestion` (que já tinha 2 réplicas e escala sem
-dificuldade), mas o **Service Registry**, que permanece com uma única
-réplica e estado em memória (Secção 3.3). Cada réplica adicional de
-`ingestion` gera mais tráfego de heartbeat e `discover()` sobre esse
-mesmo Registry partilhado, aumentando a contenção sobre o componente que
-já era o ponto único de falha identificado na análise de superfície de
-ataque (Secção 4.1), sem qualquer ganho de throughput no caminho
-crítico. **A conclusão prática é que escalar o componente errado da
-arquitetura pode degradar, em vez de melhorar, a resiliência global** —
-só escalar o Registry (fora do âmbito deste projeto, remetido para o
-Projeto 2) resolveria a causa raiz.
+| Réplicas de `ingestion` | Tempo total (wall-clock) | Latência média | Latência máxima |
+|---|---|---|---|
+| 2 | 3.214s | 1.028s | 1.908s |
+| 4 | 2.281s | 0.617s | 1.280s |
+
+Duplicar as réplicas reduziu o tempo total em **~29%** e a latência
+média por pedido em **~40%**, consistente com a limitação já identificada
+na Secção 7 ("Porque esta solução não é perfeita"): cada pod do
+`ingestion` corre o servidor de desenvolvimento do Werkzeug, single-
+threaded por omissão — com 2 réplicas, 25 pedidos concorrentes ficam em
+fila por apenas 2 processos; com 4, a fila esvazia-se mais depressa.
+Todos os 25 pedidos, em ambas as configurações, obtiveram resposta
+`200` — a diferença está na latência sob concorrência, não em falhas.
+
+**Nota de limitação adicional:** o rate-limiter por `device_id`
+encontrado no `ingestion-service` em produção mantém o seu contador em
+memória, por pod — ou seja, cada réplica aplica o limite
+independentemente, sem estado partilhado entre réplicas. Na prática,
+isto significa que escalar o `ingestion` horizontalmente aumenta
+proporcionalmente a tolerância a flooding de um único `device_id`
+forjado, em vez de a manter constante — um efeito secundário não
+intencional do desenho atual (sem backend de estado partilhado, ex:
+Redis). A deteção/resposta real da Ameaça 2 (Wazuh + Zabbix +
+`throttle-ingest`, Secção 5.2.1) não sofre deste problema, por operar ao
+nível da rede (`iptables`) sobre os logs agregados de todos os pods, não
+por processo individual.
 
 ### 6.2 Throughput e capacidade do SIEM
 
@@ -1226,12 +1244,16 @@ maior parte do risco do sistema** — está presente em todas as três
 ADTrees como alvo direto ou como passo intermédio — o que o torna o
 candidato natural para a primeira prioridade de mitigação em qualquer
 iteração futura da arquitetura. O teste de escalabilidade horizontal da
-Secção 6.1 reforça este mesmo ponto de forma quantitativa e
-independente das PoCs de ataque: duplicar as réplicas do `ingestion`
-não melhorou a resiliência do sistema sob carga — ligeiramente piorou-a
-— precisamente porque o componente que escala não é o componente que
-limita. Segurança e escalabilidade apontam, nesta arquitetura, para a
-mesma conclusão a partir de dois métodos de avaliação distintos.
+Secção 6.1 mostra que a camada testada (`ingestion`) escala como
+esperado — duplicar as réplicas reduziu a latência sob carga concorrente
+em cerca de 40% — confirmando que o seu desenho stateless não é, por si
+só, uma limitação. O ponto de risco transversal identificado nas PoCs de
+ataque mantém-se, no entanto, precisamente nos componentes que não foram
+(nem podiam ser, no âmbito deste projeto) escalados ou corrigidos aqui:
+o Service Registry e o Storage, ambos de réplica única e com estado não
+partilhado (Secção 3.3, 6.4). Escalar o `ingestion` sozinho melhora o
+throughput dessa camada, mas não resolve o ponto único de falha que
+concentra o risco de segurança do sistema.
 
 Um segundo achado relevante, descoberto durante a execução das PoCs e não
 antecipado na modelação de ameaças inicial, é que **nem todas as
