@@ -1219,7 +1219,8 @@ fora do cluster, o que introduz uma barreira adicional de facto para a
 Ameaça 3. Isto não invalida a vulnerabilidade (qualquer ponto de execução
 dentro do cluster, incluindo um único pod comprometido por outro vetor,
 continua a ter acesso irrestrito), mas é um lembrete de que a topologia de
-rede real deve ser sempre validada.
+rede real deve ser sempre validada empiricamente, e não apenas inferida a
+partir dos manifestos.
 
 ### Porque esta solução não é perfeita
 
@@ -1252,6 +1253,16 @@ testados como a fiabilidade da própria monitorização:
   em rajada seguido de tráfego legítimo normal, o que reforça que a
   deteção de segurança não deve depender de mecanismos aplicacionais
   pontuais, mas de um SIEM com janela de correlação alargada.
+
+Nenhuma destas limitações é insolúvel — são, isso sim, o roteiro mais claro
+para a próxima iteração desta arquitetura. Dar ao Registry um estado
+partilhado entre réplicas (por exemplo via etcd, ou um mecanismo simples de
+quorum) e mover o Storage para um volume distribuído resolveria de raiz o
+ponto mais crítico do sistema; trocar o Werkzeug por um servidor WSGI de
+produção fecharia a porta mais fácil para o DDoS demonstrado; e alargar a
+janela de correlação do SIEM, em vez de depender de verificações
+aplicacionais pontuais, tornaria a deteção de fraude bem mais resistente a
+ataques distribuídos no tempo.
 
 ---
 
