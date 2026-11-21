@@ -1219,8 +1219,7 @@ fora do cluster, o que introduz uma barreira adicional de facto para a
 Ameaça 3. Isto não invalida a vulnerabilidade (qualquer ponto de execução
 dentro do cluster, incluindo um único pod comprometido por outro vetor,
 continua a ter acesso irrestrito), mas é um lembrete de que a topologia de
-rede real deve ser sempre validada empiricamente, e não apenas inferida a
-partir dos manifestos.
+rede real deve ser sempre validada.
 
 ### Porque esta solução não é perfeita
 
