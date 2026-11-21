@@ -1013,13 +1013,13 @@ Zabbix:  Trigger "Possível fraude de dados — valor fora da gama física" -> P
 Com isto, as três ameaças ficam com a correlação Zabbix↔Wazuh confirmada
 empiricamente (Secções 5.1.1, 5.2.1, 5.3.1), cumprindo de forma consistente
 o requisito de ponte FCAPS↔segurança (Secção 4.3) para a totalidade do
-âmbito do projeto, não apenas como demonstração pontual.
+âmbito do projeto.
 
 **Active-response.** Dado que não existe, do lado da aplicação, um
 mecanismo de remoção seletiva de um registo forjado (o `storage.py` não
 expõe nenhum endpoint de eliminação), e que a origem real do pedido não é
 rastreável de forma fiável pela mesma razão já documentada na Ameaça 2
-(SNAT, ausência de `srcip` extraível), a resposta implementada não tenta
+( ausência de `srcip` extraível), a resposta implementada não tenta
 bloquear rede nem reverter o dado: regista o incidente de forma persistente
 e consultável, como primeiro passo de um fluxo de resposta manual/auditoria:
 ```bash
@@ -1080,14 +1080,13 @@ Storage, como trabalho futuro.
 
 ### 6.1 Escalabilidade horizontal da aplicação
 
-Para avaliar se a arquitetura escala da forma esperada pelo slide 3 do
-enunciado, mediu-se o tempo de resposta do `ingestion` sob carga concorrente
+Para avaliar se a arquitetura escala da forma esperada mediu-se o tempo de resposta do `ingestion` sob carga concorrente
 com 2 e depois 4 réplicas (`kubectl scale deploy ingestion --replicas=N`).
 As primeiras tentativas, repetindo o flood da Secção 5.2 (200 pedidos a
 `/ingest`, mesma origem), deram resultados contaminados por dois mecanismos
 de defesa que ficam ativos durante o próprio teste: o `throttle-ingest`
 (Ameaça 2, Secção 5.2.1) e um rate-limiter aplicacional por `device_id` já
-presente no `ingestion-service` em produção (5 pedidos/10s por origem; ver
+presente no `ingestion-service` (5 pedidos/10s por origem; ver
 nota de limitação abaixo). Para isolar o efeito puro de escalabilidade, o
 teste final usa um `device_id` distinto por pedido, simulando uma frota de
 sensores reais em vez de uma única origem, e mantém o volume total abaixo do
@@ -1117,7 +1116,7 @@ partilhado entre réplicas. Na prática, isto significa que escalar o
 `ingestion` horizontalmente aumenta proporcionalmente a tolerância a
 flooding de um único `device_id` forjado, em vez de a manter constante: um
 efeito secundário não intencional do desenho atual, sem backend de estado
-partilhado (por exemplo, Redis). A deteção/resposta real da Ameaça 2 (Wazuh
+partilhado. A deteção/resposta real da Ameaça 2 (Wazuh
 + Zabbix + `throttle-ingest`, Secção 5.2.1) não sofre deste problema, por
 operar ao nível da rede (`iptables`) sobre os logs agregados de todos os
 pods, não por processo individual.
@@ -1165,25 +1164,6 @@ apareceu dentro da janela de poucos segundos usada nos testes (`sleep
 latência sob carga elevada e sustentada (por exemplo, milhares de eventos
 por segundo), pelo que esta conclusão vale apenas para a escala testada.
 
-### 6.4 Limitações da avaliação de escalabilidade
-
-Por restrição de tempo e de recursos computacionais do laboratório, os
-seguintes aspetos ficam fora do âmbito desta avaliação e são assumidos como
-limitação, não como resultado:
-
-- **Cardinalidade de séries temporais** sob um número elevado de
-  dispositivos/instâncias (testado apenas até ~16 `device_id` simultâneos
-  na Secção 5.3) não foi avaliada ao ponto de observar degradação.
-- **Escalabilidade do próprio Registry e do Storage** (as componentes
-  identificadas como SPOF nas Secções 5.2 e 7) não foi testada por não ter
-  sido implementada réplica adicional; fica como trabalho direto para o
-  Projeto 2.
-- **Throughput sustentado do SIEM** foi validado apenas para picos curtos
-  (dezenas de segundos), não para carga contínua ao longo de horas, que é o
-  cenário em que a capacidade de 3.26 NVPS do Zabbix ou os limites internos
-  do `wazuh-analysisd` poderiam efetivamente ser testados.
-
----
 
 ## 7. Conclusions
 
@@ -1252,17 +1232,6 @@ testados como a fiabilidade da própria monitorização:
   em rajada seguido de tráfego legítimo normal, o que reforça que a
   deteção de segurança não deve depender de mecanismos aplicacionais
   pontuais, mas de um SIEM com janela de correlação alargada.
-
-### Trabalho futuro
-
-As limitações acima, em particular os SPOFs do Registry e do Storage, são o
-ponto de partida natural para o Projeto 2, que reutilizará esta mesma
-arquitetura sob o tema de tolerância a ataques: réplicas com estado
-partilhado, mecanismos de consenso ou quorum para o registry, e redundância
-do volume de dados são passos diretos a partir do que aqui foi identificado
-como limitação, e não como trabalho em separado.
-
----
 
 ## Anexos
 
