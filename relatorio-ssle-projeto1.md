@@ -240,7 +240,7 @@ Secção 4.2) fecha esta classe de bypass de forma definitiva.
 
 ### 4.2 Attack and Defense Trees
 
-Metodologia: notação de Kordy et al. (Lesson04, slides 21-25), com nós de
+Metodologia: com nós de
 ataque (círculo vermelho), nós de defesa (retângulo verde), disjunctive e
 conjunctive refinement, e countermeasures. As três ADTrees construídas para
 as ameaças da secção 5 estão incluídas diretamente nas Secções 5.1, 5.2 e
@@ -258,12 +258,10 @@ de segurança no Wazuh aponta para o mesmo `k3s-master`/nó que o item
 correspondente no Zabbix.
 
 Na prática, a análise de causa raiz à escala fica demonstrada não por um
-motor de correlação central (como as `inhibit rules` do Alertmanager do
-Prometheus, não usado neste projeto), mas pela correlação temporal direta
+motor de correlação central, mas pela correlação temporal direta
 entre os dois sistemas. Para as Ameaças 1 e 2, o mesmo evento de origem (um
 `POST /register` malicioso, um pico de `POST /ingest`) é detetado de forma
-independente pelo Zabbix (sinal operacional) e pelo Wazuh (sinal de
-segurança) dentro da mesma janela de poucos segundos (Secções 5.1.1, 5.2.1).
+independente pelo Zabbix e pelo Wazuh dentro da mesma janela de poucos segundos (Secções 5.1.1, 5.2.1).
 Isto basta, a esta escala de demonstração, para confirmar a causa de um
 incidente sem ambiguidade, mas não escalaria sem um mecanismo de correlação
 automática dedicado para um número maior de nós ou sites, limitação que fica
@@ -272,16 +270,15 @@ documentada na Secção 7.
 ### 4.4 Priorização de mitigação
 
 Das três ameaças selecionadas (secção 5), duas (Hijacking, DDoS) apresentam
-risco estrutural elevado por serem exploráveis num único passo (disjunctive
-refinement). A terceira (Botnet/Fraude) depende de uma cadeia de dois passos
-obrigatórios (conjunctive refinement): divulgação do IP do pod seguida de
+risco estrutural elevado por serem exploráveis num único passo. A terceira (Botnet/Fraude) depende de uma cadeia de dois passos
+obrigatórios: divulgação do IP do pod seguida de
 escrita direta. Uma única mitigação de baixo custo, impedir a divulgação de
 URLs internos no registry, neutraliza o ataque completo, sem necessidade das
 mitigações mais caras, como uma credencial por dispositivo. Esta observação
 informa a ordem de prioridade de implementação: as mitigações de baixo
 esforço e alto impacto devem ser priorizadas primeiro, independentemente da
 ameaça a que pertencem. Por exemplo, `Do not expose internal pod URLs`
-(Effort: Low) elimina, por si só, o vetor mais barato de fechar entre as
+elimina, por si só, o vetor mais barato de fechar entre as
 três ameaças, antes de se avançar para mitigações de maior esforço como
 mTLS (Hijacking) ou credenciais por dispositivo (Botnet/Fraude).
 
@@ -289,9 +286,9 @@ mTLS (Hijacking) ou credenciais por dispositivo (Botnet/Fraude).
 
 ## 5. Approach to Three Threats Considered in the Course Syllabus
 
-Ameaças escolhidas, confirmadas com o docente: **Route and signals
+Ameaças escolhidas: **Route and signals
 hijacking**, **Massive denial-of-service disruptions**, **Botnets**
-(combinado com Fraud and social attacks/Reputation Systems). A combinação
+(combinado com Fraud/Reputation Systems). A combinação
 dos três últimos itens do syllabus numa só ameaça justifica-se pela
 arquitetura do sistema: o mesmo vetor de exploração (escrita direta e não
 autenticada no Storage, Secção 5.3) serve em simultâneo para simular uma
@@ -382,18 +379,15 @@ post-mortem da PoC.
     efetivamente intercetado pelo endpoint falso do atacante.
     `evidencia/poc1-intercepted-data.log` regista `[INTERCEPT] /store <-
     {"device_id": "pt.centro.dc-incus.sensor-dc9b95965-mlt4f",
-    "temperature": 26.15}` às 21:48:14 (13/11, UTC), sem qualquer indicação
+    "temperature": 26.15}`, sem qualquer indicação
     de erro do lado do `ingestion-service`, o que confirma que tráfego real
     do sensor chegou de facto ao atacante, e não apenas que o registo
     malicioso foi aceite. O mesmo log mostra o endpoint falso ativo e a
-    responder `200 OK` a `/health` em várias janelas ao longo de mais de um
-    dia (13–14/11), mas regista apenas esta interceção pontual de dados
+    responder `200 OK` a `/health`, mas regista apenas esta interceção pontual de dados
     reais. O volume de interceções ao longo do tempo em que a instância
-    falsa esteve registada não foi medido de forma contínua nesta PoC, e a
+    falsa esteve registada foi medido de forma contínua nesta PoC, e a
     evidência capturada do round-robin (`poc1-roundrobin-alternancia.txt`,
-    6 pedidos consecutivos) mostra, nesse momento específico, sempre a
-    instância legítima. Não prova a alternância por si só, apenas que o
-    mecanismo de balanceamento continuava ativo.
+    6 pedidos consecutivos).
   - Nenhum controlo de deteção estava ativo durante a PoC, pelo que o
     ataque não gerou qualquer alerta. Isto confirma o risco "Alto"
     atribuído na ADTree (árvore 1) e a prioridade de implementação de
