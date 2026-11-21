@@ -1,6 +1,6 @@
 pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth
-xx.evil.dc-evil.rack0.nodeX.storage-service.pwned
 pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth
 pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth
-xx.evil.dc-evil.rack0.nodeX.storage-service.pwned
+pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth
+pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth
 pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth

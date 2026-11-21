@@ -359,7 +359,7 @@ post-mortem da PoC.
   (`MAX_FAILURES=3`, `HEALTH_INTERVAL=10s`), e regista em log todo o
   conteúdo recebido em `POST /store`.
 
-  **Fase A — Registo da instância falsa:**
+  **Registo da instância falsa:**
   ```
   POST /register
   {"name":"storage-service","url":"http://10.255.255.184:9999",
@@ -428,11 +428,10 @@ Regra criada:
 </group>
 ```
 
-**Deteção confirmada:** reexecutada a Fase A da PoC (registo de instância
-falsa), o alerta foi gerado em produção, e não apenas em teste isolado,
+**Deteção confirmada:** reexecutada o registo de instância
+falsa, o alerta foi gerado, e não apenas em teste isolado,
 confirmado visualmente nas duas camadas, nas imagens abaixo. A regra exata à
-qual o active-response fica associado (100102, não a 100100 genérica
-mostrada acima) é detalhada na Secção 5.1.2, junto com a distinção entre
+qual o active-response fica associado é detalhada na Secção 5.1.2, junto com a distinção entre
 registo legítimo e malicioso.
 
 A mesma tentativa foi também detetada do lado da monitorização: o Zabbix
@@ -502,7 +501,7 @@ Associado à regra via:
 </active-response>
 ```
 
-**Deteção e resposta confirmadas em produção**, reexecutada a Fase A da PoC
+**Deteção e resposta confirmadas em produção**, reexecutada o PoC
 (registo de instância falsa):
 ```
 Rule: 100102 (level 12) -> 'SSLE: registo malicioso de storage-service (nó desconhecido)'
@@ -543,13 +542,10 @@ done
 ```
 
 Num teste real, a instância real permaneceu ininterruptamente registada
-durante todo o ataque, sem qualquer janela de indisponibilidade. Ao
-contrário da Ameaça 2, onde a mitigação continua a afetar temporariamente
-tráfego legítimo (Secção 5.2.1), a Ameaça 1 atinge aqui uma resposta
-corretiva sem efeitos colaterais mensuráveis.
+durante todo o ataque, sem qualquer janela de indisponibilidade.
 
 **Nota adicional — deteção mais rápida do que o ciclo de observação da
-PoC.** Numa reexecução posterior da Fase A, já com a deteção e o
+PoC.** Numa reexecução posterior, já com a deteção e o
 active-response permanentemente ativos (e não apenas durante os testes
 dedicados acima), as 6 leituras consecutivas de `get_service()` ao longo de
 6 segundos devolveram sempre a instância real, nunca a maliciosa, ao
@@ -562,9 +558,7 @@ também com o facto de o agente Wazuh processar o ficheiro em modo *tail*
 praticamente contínuo. Este é, na prática, o cenário mais favorável
 possível: o sistema impediu a exploração de forma tão rápida que nem a PoC,
 a correr imediatamente a seguir ao registo malicioso, conseguiu observar uma
-única leitura envenenada. É uma confirmação mais forte do que a medição
-original de latência (Secção 6.3), obtida sem qualquer intervenção manual
-entre o ataque e a resposta.
+única leitura envenenada.
 
 - Evidência (Fase 4 — deteção e active-response confirmados):
   `evidencia/poc1-resposta-final/01-antes.json`, `02-ataque.json`,
@@ -619,7 +613,7 @@ entre o ataque e a resposta.
   - **Limites do active-response implementado:** só o rate-limit por
     `iptables` no NodePort 30001 (Secção 5.2.1) está em produção; nenhuma
     das mitigações aplicacionais acima (validação de `limit`, rate limiting
-    por `device_id`, WSGI de produção) foi implementada. A resposta é
+    por `device_id`) foi implementada. A resposta é
     indiscriminada, afeta todo o tráfego ao NodePort, incluindo o sensor
     legítimo, durante a janela de 60s, porque o `externalTrafficPolicy` do
     NodePort mascara o IP real do atacante (SNAT). Não há forma de
@@ -756,7 +750,7 @@ Zabbix:  Trigger "Ingestion: request rate" -> PROBLEM (count(...,10s)>20)
 ![Deteção da Ameaça 2 no Zabbix — problema "request rate" (severidade Warning) no host ssle-k3s-cluster](<evidencias-detecao/Deteção Ameaça 2 (Zabbix nativo).png>)
 
 **Active-response — rate-limit no destino.** Dado que o IP de origem não é
-fiável (achado acima), a resposta implementada não tenta bloquear o
+fiável, a resposta implementada não tenta bloquear o
 atacante: aplica um limite de taxa diretamente no NodePort do destino
 (`30001`, ingestion), via um pequeno serviço HTTP (`responder.py`, porta
 9100) no nó do cluster, chamado pelo active-response do Wazuh:
@@ -809,8 +803,7 @@ ausente aos 75s, sem qualquer comando manual entre as duas verificações.
 ### 5.3 Ameaça 3 — Botnets / Data Fraud
 
 - **Descrição da ameaça:**
-  `GET /services` no registry revela os IPs internos dos pods (contornando
-  a abstração do ClusterIP). Com o endereço real do pod Storage, um
+  `GET /services` no registry revela os IPs internos dos pods. Com o endereço real do pod Storage, um
   atacante escreve diretamente em `POST /store`, que não realiza qualquer
   validação de tipo ou gama independente de `ingestion.py`: a validação aí
   implementada (gama de temperatura, truncagem de `device_id`) é totalmente
