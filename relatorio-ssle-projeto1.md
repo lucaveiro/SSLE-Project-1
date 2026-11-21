@@ -4,7 +4,7 @@
 **Autor:** Lucas Rebelo
 **Entrega:** 22 de novembro de 2026
 
-Estrutura clássica de artigo/tese, conforme pedido no enunciado da cadeira:
+Estrutura:
 Introduction · Relevant State of the Art · Service Architecture Used ·
 Risk Management and Mitigation · Approach to three threats considered ·
 Evaluation of the solution's approaches and scalability · Conclusions
