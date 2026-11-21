@@ -1,0 +1,59 @@
+Estado interno do wazuh-analysisd (21/11/2026), referente à Secção 6.2 do
+relatório — throughput e capacidade do SIEM. Contadores cumulativos desde
+o último arranque do wazuh-analysisd (sem reinício entretanto).
+
+Comando (correr no host ssle):
+
+  incus exec wazuh-container -- cat /var/ossec/var/run/wazuh-analysisd.state
+
+Resultado:
+
+# State file for wazuh-analysisd
+# THIS FILE WILL BE DEPRECATED IN FUTURE VERSIONS
+
+# Total events decoded
+total_events_decoded='82642'
+
+# Syscheck events decoded
+syscheck_events_decoded='8'
+
+# Syscollector events decoded
+syscollector_events_decoded='1269'
+
+# Rootcheck events decoded
+rootcheck_events_decoded='40482'
+
+# Security configuration assessment events decoded
+sca_events_decoded='425'
+
+# Winevt events decoded
+winevt_events_decoded='0'
+
+# Database synchronization messages dispatched
+dbsync_messages_dispatched='953'
+
+# Other events decoded
+other_events_decoded='39505'
+
+# Events processed (Rule matching)
+events_processed='81686'
+
+# Events received
+events_received='82647'
+
+# Events dropped
+events_dropped='0'
+
+# Alerts written to disk
+alerts_written='42180'
+
+# Firewall alerts written to disk
+firewall_written='0'
+
+# FTS alerts written to disk
+fts_written='0'
+
+Valores citados na Secção 6.2: events_received = 82647, events_processed =
+81686, events_dropped = 0 — confirma que nenhum evento foi descartado por
+sobrecarga ao longo de toda a sessão, incluindo os floods concentrados da
+Secção 5.2.

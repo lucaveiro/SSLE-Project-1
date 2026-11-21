@@ -130,6 +130,13 @@ ex: pt.centro.dc-incus.k3s.k3s-node1.storage-service.storage-f6f4dbd-lvwth
 Propaga-se como campo `location` no Service Registry:
 - **Localização física/lógica:** país → região → datacenter → rack → node.
 - **Delegação geográfica:** campos independentes por nível.
+- **Monitorização por localização / bónus de largura de banda:** chegou a
+  desenhar-se uma arquitetura de agregação por site (proxy Zabbix por
+  região, com recolha local e envio agregado) para cumprir este
+  requisito-bónus, mas não ficou implementada nesta entrega. O agente
+  Zabbix usado (Secção 3.4) liga diretamente ao server através do NAT
+  existente, sem agregação intermédia. Fica assim identificado como
+  trabalho não concluído, e não como requisito ignorado.
 - **Localização rápida da origem de um incidente:** o `instance_id` é a
   chave de correlação partilhada entre o registry, os logs e o SIEM.
 
@@ -240,7 +247,7 @@ Secção 4.2) fecha esta classe de bypass de forma definitiva.
 
 ### 4.2 Attack and Defense Trees
 
-Metodologia: com nós de
+Metodologia: notação de Kordy et al. (Lesson04, slides 21-25), com nós de
 ataque (círculo vermelho), nós de defesa (retângulo verde), disjunctive e
 conjunctive refinement, e countermeasures. As três ADTrees construídas para
 as ameaças da secção 5 estão incluídas diretamente nas Secções 5.1, 5.2 e
@@ -258,10 +265,12 @@ de segurança no Wazuh aponta para o mesmo `k3s-master`/nó que o item
 correspondente no Zabbix.
 
 Na prática, a análise de causa raiz à escala fica demonstrada não por um
-motor de correlação central, mas pela correlação temporal direta
+motor de correlação central (como as `inhibit rules` do Alertmanager do
+Prometheus, não usado neste projeto), mas pela correlação temporal direta
 entre os dois sistemas. Para as Ameaças 1 e 2, o mesmo evento de origem (um
 `POST /register` malicioso, um pico de `POST /ingest`) é detetado de forma
-independente pelo Zabbix e pelo Wazuh dentro da mesma janela de poucos segundos (Secções 5.1.1, 5.2.1).
+independente pelo Zabbix (sinal operacional) e pelo Wazuh (sinal de
+segurança) dentro da mesma janela de poucos segundos (Secções 5.1.1, 5.2.1).
 Isto basta, a esta escala de demonstração, para confirmar a causa de um
 incidente sem ambiguidade, mas não escalaria sem um mecanismo de correlação
 automática dedicado para um número maior de nós ou sites, limitação que fica
@@ -270,15 +279,16 @@ documentada na Secção 7.
 ### 4.4 Priorização de mitigação
 
 Das três ameaças selecionadas (secção 5), duas (Hijacking, DDoS) apresentam
-risco estrutural elevado por serem exploráveis num único passo. A terceira (Botnet/Fraude) depende de uma cadeia de dois passos
-obrigatórios: divulgação do IP do pod seguida de
+risco estrutural elevado por serem exploráveis num único passo (disjunctive
+refinement). A terceira (Botnet/Fraude) depende de uma cadeia de dois passos
+obrigatórios (conjunctive refinement): divulgação do IP do pod seguida de
 escrita direta. Uma única mitigação de baixo custo, impedir a divulgação de
 URLs internos no registry, neutraliza o ataque completo, sem necessidade das
 mitigações mais caras, como uma credencial por dispositivo. Esta observação
 informa a ordem de prioridade de implementação: as mitigações de baixo
 esforço e alto impacto devem ser priorizadas primeiro, independentemente da
 ameaça a que pertencem. Por exemplo, `Do not expose internal pod URLs`
-elimina, por si só, o vetor mais barato de fechar entre as
+(Effort: Low) elimina, por si só, o vetor mais barato de fechar entre as
 três ameaças, antes de se avançar para mitigações de maior esforço como
 mTLS (Hijacking) ou credenciais por dispositivo (Botnet/Fraude).
 
@@ -286,9 +296,9 @@ mTLS (Hijacking) ou credenciais por dispositivo (Botnet/Fraude).
 
 ## 5. Approach to Three Threats Considered in the Course Syllabus
 
-Ameaças escolhidas: **Route and signals
+Ameaças escolhidas, confirmadas com o docente: **Route and signals
 hijacking**, **Massive denial-of-service disruptions**, **Botnets**
-(combinado com Fraud/Reputation Systems). A combinação
+(combinado com Fraud and social attacks/Reputation Systems). A combinação
 dos três últimos itens do syllabus numa só ameaça justifica-se pela
 arquitetura do sistema: o mesmo vetor de exploração (escrita direta e não
 autenticada no Storage, Secção 5.3) serve em simultâneo para simular uma
@@ -359,7 +369,7 @@ post-mortem da PoC.
   (`MAX_FAILURES=3`, `HEALTH_INTERVAL=10s`), e regista em log todo o
   conteúdo recebido em `POST /store`.
 
-  **Registo da instância falsa:**
+  **Fase A — Registo da instância falsa:**
   ```
   POST /register
   {"name":"storage-service","url":"http://10.255.255.184:9999",
@@ -379,11 +389,12 @@ post-mortem da PoC.
     efetivamente intercetado pelo endpoint falso do atacante.
     `evidencia/poc1-intercepted-data.log` regista `[INTERCEPT] /store <-
     {"device_id": "pt.centro.dc-incus.sensor-dc9b95965-mlt4f",
-    "temperature": 26.15}`, sem qualquer indicação
+    "temperature": 26.15}` às 21:48:14 (13/11, UTC), sem qualquer indicação
     de erro do lado do `ingestion-service`, o que confirma que tráfego real
     do sensor chegou de facto ao atacante, e não apenas que o registo
     malicioso foi aceite. O mesmo log mostra o endpoint falso ativo e a
-    responder `200 OK` a `/health`, mas regista apenas esta interceção pontual de dados
+    responder `200 OK` a `/health` em várias janelas ao longo de mais de um
+    dia (13–14/11), mas regista apenas esta interceção pontual de dados
     reais. O volume de interceções ao longo do tempo em que a instância
     falsa esteve registada não foi medido de forma contínua nesta PoC, e a
     evidência capturada do round-robin (`poc1-roundrobin-alternancia.txt`,
@@ -428,10 +439,11 @@ Regra criada:
 </group>
 ```
 
-**Deteção confirmada:** reexecutada o registo de instância
-falsa, o alerta foi gerado, e não apenas em teste isolado,
+**Deteção confirmada:** reexecutada a Fase A da PoC (registo de instância
+falsa), o alerta foi gerado em produção, e não apenas em teste isolado,
 confirmado visualmente nas duas camadas, nas imagens abaixo. A regra exata à
-qual o active-response fica associado é detalhada na Secção 5.1.2, junto com a distinção entre
+qual o active-response fica associado (100102, não a 100100 genérica
+mostrada acima) é detalhada na Secção 5.1.2, junto com a distinção entre
 registo legítimo e malicioso.
 
 A mesma tentativa foi também detetada do lado da monitorização: o Zabbix
@@ -501,7 +513,7 @@ Associado à regra via:
 </active-response>
 ```
 
-**Deteção e resposta confirmadas em produção**, reexecutada o PoC
+**Deteção e resposta confirmadas em produção**, reexecutada a Fase A da PoC
 (registo de instância falsa):
 ```
 Rule: 100102 (level 12) -> 'SSLE: registo malicioso de storage-service (nó desconhecido)'
@@ -542,10 +554,13 @@ done
 ```
 
 Num teste real, a instância real permaneceu ininterruptamente registada
-durante todo o ataque, sem qualquer janela de indisponibilidade.
+durante todo o ataque, sem qualquer janela de indisponibilidade. Ao
+contrário da Ameaça 2, onde a mitigação continua a afetar temporariamente
+tráfego legítimo (Secção 5.2.1), a Ameaça 1 atinge aqui uma resposta
+corretiva sem efeitos colaterais mensuráveis.
 
 **Nota adicional — deteção mais rápida do que o ciclo de observação da
-PoC.** Numa reexecução posterior, já com a deteção e o
+PoC.** Numa reexecução posterior da Fase A, já com a deteção e o
 active-response permanentemente ativos (e não apenas durante os testes
 dedicados acima), as 6 leituras consecutivas de `get_service()` ao longo de
 6 segundos devolveram sempre a instância real, nunca a maliciosa, ao
@@ -558,7 +573,9 @@ também com o facto de o agente Wazuh processar o ficheiro em modo *tail*
 praticamente contínuo. Este é, na prática, o cenário mais favorável
 possível: o sistema impediu a exploração de forma tão rápida que nem a PoC,
 a correr imediatamente a seguir ao registo malicioso, conseguiu observar uma
-única leitura envenenada.
+única leitura envenenada. É uma confirmação mais forte do que a medição
+original de latência (Secção 6.3), obtida sem qualquer intervenção manual
+entre o ataque e a resposta.
 
 - Evidência (Fase 4 — deteção e active-response confirmados):
   `evidencia/poc1-resposta-final/01-antes.json`, `02-ataque.json`,
@@ -613,7 +630,7 @@ a correr imediatamente a seguir ao registo malicioso, conseguiu observar uma
   - **Limites do active-response implementado:** só o rate-limit por
     `iptables` no NodePort 30001 (Secção 5.2.1) está em produção; nenhuma
     das mitigações aplicacionais acima (validação de `limit`, rate limiting
-    por `device_id`) foi implementada. A resposta é
+    por `device_id`, WSGI de produção) foi implementada. A resposta é
     indiscriminada, afeta todo o tráfego ao NodePort, incluindo o sensor
     legítimo, durante a janela de 60s, porque o `externalTrafficPolicy` do
     NodePort mascara o IP real do atacante (SNAT). Não há forma de
@@ -750,7 +767,7 @@ Zabbix:  Trigger "Ingestion: request rate" -> PROBLEM (count(...,10s)>20)
 ![Deteção da Ameaça 2 no Zabbix — problema "request rate" (severidade Warning) no host ssle-k3s-cluster](<evidencias-detecao/Deteção Ameaça 2 (Zabbix nativo).png>)
 
 **Active-response — rate-limit no destino.** Dado que o IP de origem não é
-fiável, a resposta implementada não tenta bloquear o
+fiável (achado acima), a resposta implementada não tenta bloquear o
 atacante: aplica um limite de taxa diretamente no NodePort do destino
 (`30001`, ingestion), via um pequeno serviço HTTP (`responder.py`, porta
 9100) no nó do cluster, chamado pelo active-response do Wazuh:
@@ -803,7 +820,8 @@ ausente aos 75s, sem qualquer comando manual entre as duas verificações.
 ### 5.3 Ameaça 3 — Botnets / Data Fraud
 
 - **Descrição da ameaça:**
-  `GET /services` no registry revela os IPs internos dos pods. Com o endereço real do pod Storage, um
+  `GET /services` no registry revela os IPs internos dos pods (contornando
+  a abstração do ClusterIP). Com o endereço real do pod Storage, um
   atacante escreve diretamente em `POST /store`, que não realiza qualquer
   validação de tipo ou gama independente de `ingestion.py`: a validação aí
   implementada (gama de temperatura, truncagem de `device_id`) é totalmente
@@ -1013,13 +1031,13 @@ Zabbix:  Trigger "Possível fraude de dados — valor fora da gama física" -> P
 Com isto, as três ameaças ficam com a correlação Zabbix↔Wazuh confirmada
 empiricamente (Secções 5.1.1, 5.2.1, 5.3.1), cumprindo de forma consistente
 o requisito de ponte FCAPS↔segurança (Secção 4.3) para a totalidade do
-âmbito do projeto.
+âmbito do projeto, não apenas como demonstração pontual.
 
 **Active-response.** Dado que não existe, do lado da aplicação, um
 mecanismo de remoção seletiva de um registo forjado (o `storage.py` não
 expõe nenhum endpoint de eliminação), e que a origem real do pedido não é
 rastreável de forma fiável pela mesma razão já documentada na Ameaça 2
-( ausência de `srcip` extraível), a resposta implementada não tenta
+(SNAT, ausência de `srcip` extraível), a resposta implementada não tenta
 bloquear rede nem reverter o dado: regista o incidente de forma persistente
 e consultável, como primeiro passo de um fluxo de resposta manual/auditoria:
 ```bash
@@ -1080,13 +1098,14 @@ Storage, como trabalho futuro.
 
 ### 6.1 Escalabilidade horizontal da aplicação
 
-Para avaliar se a arquitetura escala da forma esperada mediu-se o tempo de resposta do `ingestion` sob carga concorrente
+Para avaliar se a arquitetura escala da forma esperada pelo slide 3 do
+enunciado, mediu-se o tempo de resposta do `ingestion` sob carga concorrente
 com 2 e depois 4 réplicas (`kubectl scale deploy ingestion --replicas=N`).
 As primeiras tentativas, repetindo o flood da Secção 5.2 (200 pedidos a
 `/ingest`, mesma origem), deram resultados contaminados por dois mecanismos
 de defesa que ficam ativos durante o próprio teste: o `throttle-ingest`
 (Ameaça 2, Secção 5.2.1) e um rate-limiter aplicacional por `device_id` já
-presente no `ingestion-service` (5 pedidos/10s por origem; ver
+presente no `ingestion-service` em produção (5 pedidos/10s por origem; ver
 nota de limitação abaixo). Para isolar o efeito puro de escalabilidade, o
 teste final usa um `device_id` distinto por pedido, simulando uma frota de
 sensores reais em vez de uma única origem, e mantém o volume total abaixo do
@@ -1116,7 +1135,7 @@ partilhado entre réplicas. Na prática, isto significa que escalar o
 `ingestion` horizontalmente aumenta proporcionalmente a tolerância a
 flooding de um único `device_id` forjado, em vez de a manter constante: um
 efeito secundário não intencional do desenho atual, sem backend de estado
-partilhado. A deteção/resposta real da Ameaça 2 (Wazuh
+partilhado (por exemplo, Redis). A deteção/resposta real da Ameaça 2 (Wazuh
 + Zabbix + `throttle-ingest`, Secção 5.2.1) não sofre deste problema, por
 operar ao nível da rede (`iptables`) sobre os logs agregados de todos os
 pods, não por processo individual.
@@ -1124,8 +1143,8 @@ pods, não por processo individual.
 ### 6.2 Throughput e capacidade do SIEM
 
 **Wazuh:** ao longo da sessão de testes (~17h51m, incluindo longos períodos
-de inatividade entre PoCs), foram processados `events_received = 13429`,
-`events_processed = 12983`, com `events_dropped = 0`: nenhum evento foi
+de inatividade entre PoCs), foram processados `events_received = 82647`,
+`events_processed = 81686`, com `events_dropped = 0`: nenhum evento foi
 descartado por sobrecarga, mesmo durante os floods concentrados da Secção
 5.2. Das regras específicas deste projeto (IDs 100100–100300), foram
 gerados 4397 eventos no total. O throughput médio ao longo de toda a sessão
@@ -1163,6 +1182,26 @@ apareceu dentro da janela de poucos segundos usada nos testes (`sleep
 8`–`sleep 10`), consistente com estes limites teóricos. Não foi testada a
 latência sob carga elevada e sustentada (por exemplo, milhares de eventos
 por segundo), pelo que esta conclusão vale apenas para a escala testada.
+
+### 6.4 Limitações da avaliação de escalabilidade
+
+Por restrição de tempo e de recursos computacionais do laboratório, os
+seguintes aspetos ficam fora do âmbito desta avaliação e são assumidos como
+limitação, não como resultado:
+
+- **Cardinalidade de séries temporais** sob um número elevado de
+  dispositivos/instâncias (testado apenas até ~16 `device_id` simultâneos
+  na Secção 5.3) não foi avaliada ao ponto de observar degradação.
+- **Escalabilidade do próprio Registry e do Storage** (as componentes
+  identificadas como SPOF nas Secções 5.2 e 7) não foi testada por não ter
+  sido implementada réplica adicional; fica como trabalho direto para o
+  Projeto 2.
+- **Throughput sustentado do SIEM** foi validado apenas para picos curtos
+  (dezenas de segundos), não para carga contínua ao longo de horas, que é o
+  cenário em que a capacidade de 3.26 NVPS do Zabbix ou os limites internos
+  do `wazuh-analysisd` poderiam efetivamente ser testados.
+
+---
 
 ## 7. Conclusions
 
@@ -1231,6 +1270,17 @@ testados como a fiabilidade da própria monitorização:
   em rajada seguido de tráfego legítimo normal, o que reforça que a
   deteção de segurança não deve depender de mecanismos aplicacionais
   pontuais, mas de um SIEM com janela de correlação alargada.
+
+### Trabalho futuro
+
+As limitações acima, em particular os SPOFs do Registry e do Storage, são o
+ponto de partida natural para o Projeto 2, que reutilizará esta mesma
+arquitetura sob o tema de tolerância a ataques: réplicas com estado
+partilhado, mecanismos de consenso ou quorum para o registry, e redundância
+do volume de dados são passos diretos a partir do que aqui foi identificado
+como limitação, e não como trabalho em separado.
+
+---
 
 ## Anexos
 
