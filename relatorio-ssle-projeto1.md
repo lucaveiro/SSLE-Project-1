@@ -1164,7 +1164,6 @@ apareceu dentro da janela de poucos segundos usada nos testes (`sleep
 latência sob carga elevada e sustentada (por exemplo, milhares de eventos
 por segundo), pelo que esta conclusão vale apenas para a escala testada.
 
-
 ## 7. Conclusions
 
 As três provas de conceito executadas confirmaram, com evidência
