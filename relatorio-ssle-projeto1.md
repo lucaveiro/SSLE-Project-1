@@ -4,7 +4,7 @@
 **Autor:** Lucas Rebelo
 **Entrega:** 22 de novembro de 2026
 
-Estrutura conforme `Projeto.pdf`, slide 4 ("Classic article/thesis structure"):
+Estrutura clássica de artigo/tese, conforme pedido no enunciado da cadeira:
 Introduction · Relevant State of the Art · Service Architecture Used ·
 Risk Management and Mitigation · Approach to three threats considered ·
 Evaluation of the solution's approaches and scalability · Conclusions
@@ -118,7 +118,7 @@ sensor → [discover via registry] → ingestion → [discover via registry] →
 
 ![Arquitetura de serviços — namespace ssle (k3s)](images/diagrama-arquitetura.png)
 
-### 3.2 Identificação e naming hierárquico (slide 7)
+### 3.2 Identificação e naming hierárquico
 
 Esquema implementado em `common.py`:
 
@@ -247,7 +247,7 @@ Secção 4.2) fecha esta classe de bypass de forma definitiva.
 
 ### 4.2 Attack and Defense Trees
 
-Metodologia: notação de Kordy et al. (Lesson04, slides 21-25), com nós de
+Metodologia: notação de Attack-Defense Trees, com nós de
 ataque (círculo vermelho), nós de defesa (retângulo verde), disjunctive e
 conjunctive refinement, e countermeasures. As três ADTrees construídas para
 as ameaças da secção 5 estão incluídas diretamente nas Secções 5.1, 5.2 e
@@ -265,8 +265,7 @@ de segurança no Wazuh aponta para o mesmo `k3s-master`/nó que o item
 correspondente no Zabbix.
 
 Na prática, a análise de causa raiz à escala fica demonstrada não por um
-motor de correlação central (como as `inhibit rules` do Alertmanager do
-Prometheus, não usado neste projeto), mas pela correlação temporal direta
+motor de correlação central dedicado, mas pela correlação temporal direta
 entre os dois sistemas. Para as Ameaças 1 e 2, o mesmo evento de origem (um
 `POST /register` malicioso, um pico de `POST /ingest`) é detetado de forma
 independente pelo Zabbix (sinal operacional) e pelo Wazuh (sinal de
@@ -560,22 +559,14 @@ tráfego legítimo (Secção 5.2.1), a Ameaça 1 atinge aqui uma resposta
 corretiva sem efeitos colaterais mensuráveis.
 
 **Nota adicional — deteção mais rápida do que o ciclo de observação da
-PoC.** Numa reexecução posterior da Fase A, já com a deteção e o
-active-response permanentemente ativos (e não apenas durante os testes
-dedicados acima), as 6 leituras consecutivas de `get_service()` ao longo de
-6 segundos devolveram sempre a instância real, nunca a maliciosa, ao
-contrário do comportamento alternado documentado na execução original
-(Secção 5.1, "Resposta adotada"), feita antes de existir qualquer deteção. A
-explicação é a própria correção: a instância maliciosa foi detetada e
-removida pela regra 100102 antes de a primeira leitura do round-robin
-ocorrer, coerente com o intervalo de atualização de 10s do `log[]`, mas
-também com o facto de o agente Wazuh processar o ficheiro em modo *tail*
-praticamente contínuo. Este é, na prática, o cenário mais favorável
-possível: o sistema impediu a exploração de forma tão rápida que nem a PoC,
-a correr imediatamente a seguir ao registo malicioso, conseguiu observar uma
-única leitura envenenada. É uma confirmação mais forte do que a medição
-original de latência (Secção 6.3), obtida sem qualquer intervenção manual
-entre o ataque e a resposta.
+PoC.** Numa reexecução posterior da Fase A, já com deteção e
+active-response permanentemente ativos, as 6 leituras consecutivas de
+`get_service()` ao longo de 6 segundos devolveram sempre a instância real —
+ao contrário da alternância observada na execução original (Secção 5.1,
+antes de existir deteção). A regra 100102 remove a instância maliciosa
+antes de a primeira leitura do round-robin ocorrer, o que é, na prática, o
+cenário mais favorável possível e uma confirmação mais forte do que a
+medição de latência da Secção 6.3.
 
 - Evidência (Fase 4 — deteção e active-response confirmados):
   `evidencia/poc1-resposta-final/01-antes.json`, `02-ataque.json`,
@@ -745,15 +736,12 @@ tradicional, assente em métricas de recursos, não é necessariamente o sinal
 mais adequado para detetar ataques aplicacionais de curta duração; a taxa de
 eventos é mais sensível neste contexto.
 
-**Achado relevante — confirmação empírica do SNAT.** Os IPs de origem
-capturados nos logs durante o flood foram `10.42.0.0`/`10.42.0.1`
-(endereços internos da rede overlay/gateway do flannel), não o IP real do
-contentor atacante (`10.255.255.184`). Confirma concretamente, com dados
-reais e não apenas por inspeção dos manifestos, o risco já identificado na
-análise de superfície de ataque (Secção 4.1): o `externalTrafficPolicy` por
-omissão dos NodePorts mascara a origem real do tráfego nos logs da
-aplicação, o que motiva a escolha de uma resposta por rate-limit no destino
-em vez de bloqueio do atacante na origem (ver abaixo).
+**Achado relevante — confirmação empírica do SNAT.** Os IPs capturados nos
+logs durante o flood foram `10.42.0.0`/`10.42.0.1` (gateway da rede overlay
+do flannel), não o IP real do atacante (`10.255.255.184`) — confirma com
+dados reais o risco já identificado em 4.1: o `externalTrafficPolicy` por
+omissão mascara a origem do tráfego, o que motiva a resposta por rate-limit
+no destino em vez de bloqueio na origem (ver abaixo).
 
 **Deteção confirmada em produção, nas duas camadas.** Reexecutado o flood da
 PoC, ambos os sistemas dispararam na mesma janela temporal:
@@ -901,19 +889,14 @@ ausente aos 75s, sem qualquer comando manual entre as duas verificações.
   cluster.
 
   **Nota metodológica — refinamento do ponto de execução.** O IP do pod
-  pertence à rede overlay do flannel (`10.42.0.0/16`), que não é routável a
-  partir de um contentor Incus genérico (`attacker`, na rede
-  `10.255.255.0/24`), confirmado por timeout (`curl` exit code 28) a partir
-  da VM Debian e `000` a partir do `attacker`. O `POST /store` só foi
-  bem-sucedido quando executado a partir de dentro de um nó do cluster
-  (`k3s-master`). Isto refina o modelo de ameaça original: explorar esta
-  divulgação de endereço interno exige que o atacante tenha execução de
-  código dentro da rede overlay do cluster (por exemplo, um pod
-  comprometido, ou acesso a um nó), não apenas presença genérica no mesmo
-  site Incus. É uma barreira adicional não capturada na ADTree inicial, mas
-  que não invalida a vulnerabilidade: um único pod comprometido por
-  qualquer outro vetor dá acesso irrestrito a todos os outros serviços pela
-  mesma via.
+  pertence à rede overlay do flannel (`10.42.0.0/16`), não routável a
+  partir de um contentor Incus genérico — confirmado por timeout a partir
+  do `attacker`; o `POST /store` só teve sucesso a partir de dentro de um
+  nó do cluster (`k3s-master`). Isto refina o modelo de ameaça: explorar
+  esta divulgação exige execução de código dentro da rede overlay, não
+  apenas presença no mesmo site Incus — uma barreira adicional que não
+  invalida a vulnerabilidade, já que qualquer pod comprometido por outro
+  vetor mantém acesso irrestrito pela mesma via.
 
   **Fase B — Escrita direta, bypass da validação (Vetor de Ataque 2):**
   ```
@@ -1098,8 +1081,8 @@ Storage, por implementar.
 
 ### 6.1 Escalabilidade horizontal da aplicação
 
-Para avaliar se a arquitetura escala da forma esperada pelo slide 3 do
-enunciado, mediu-se o tempo de resposta do `ingestion` sob carga concorrente
+Para avaliar se a arquitetura escala da forma esperada pelo enunciado,
+mediu-se o tempo de resposta do `ingestion` sob carga concorrente
 com 2 e depois 4 réplicas (`kubectl scale deploy ingestion --replicas=N`).
 As primeiras tentativas, repetindo o flood da Secção 5.2 (200 pedidos a
 `/ingest`, mesma origem), deram resultados contaminados por dois mecanismos
@@ -1211,17 +1194,6 @@ Escalar o `ingestion` sozinho melhora o throughput dessa camada, mas
 não resolve o ponto único de falha que concentra o risco de segurança do
 sistema.
 
-Um segundo achado relevante, descoberto durante a execução das PoCs e não
-antecipado na modelação de ameaças inicial, é que nem todas as superfícies
-de ataque teoricamente expostas são igualmente acessíveis na prática: a
-rede overlay do flannel não é routável a partir de um contentor genérico
-fora do cluster, o que introduz uma barreira adicional de facto para a
-Ameaça 3. Isto não invalida a vulnerabilidade (qualquer ponto de execução
-dentro do cluster, incluindo um único pod comprometido por outro vetor,
-continua a ter acesso irrestrito), mas é um lembrete de que a topologia de
-rede real deve ser sempre validada empiricamente, e não apenas inferida a
-partir dos manifestos.
-
 ### Porque esta solução não é perfeita
 
 A arquitetura apresenta limitações estruturais, documentadas e assumidas
@@ -1253,16 +1225,6 @@ testados como a fiabilidade da própria monitorização:
   em rajada seguido de tráfego legítimo normal, o que reforça que a
   deteção de segurança não deve depender de mecanismos aplicacionais
   pontuais, mas de um SIEM com janela de correlação alargada.
-
-Nenhuma destas limitações é insolúvel — são, isso sim, o roteiro mais claro
-para a próxima iteração desta arquitetura. Dar ao Registry um estado
-partilhado entre réplicas (por exemplo via etcd, ou um mecanismo simples de
-quorum) e mover o Storage para um volume distribuído resolveria de raiz o
-ponto mais crítico do sistema; trocar o Werkzeug por um servidor WSGI de
-produção fecharia a porta mais fácil para o DDoS demonstrado; e alargar a
-janela de correlação do SIEM, em vez de depender de verificações
-aplicacionais pontuais, tornaria a deteção de fraude bem mais resistente a
-ataques distribuídos no tempo.
 
 ---
 
