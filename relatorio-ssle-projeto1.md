@@ -385,9 +385,11 @@ post-mortem da PoC.
     malicioso foi aceite. O mesmo log mostra o endpoint falso ativo e a
     responder `200 OK` a `/health`, mas regista apenas esta interceção pontual de dados
     reais. O volume de interceções ao longo do tempo em que a instância
-    falsa esteve registada foi medido de forma contínua nesta PoC, e a
+    falsa esteve registada não foi medido de forma contínua nesta PoC, e a
     evidência capturada do round-robin (`poc1-roundrobin-alternancia.txt`,
-    6 pedidos consecutivos).
+    6 pedidos consecutivos) mostra, nesse momento específico, sempre a
+    instância legítima. Não prova a alternância por si só, apenas que o
+    mecanismo de balanceamento continuava ativo.
   - Nenhum controlo de deteção estava ativo durante a PoC, pelo que o
     ataque não gerou qualquer alerta. Isto confirma o risco "Alto"
     atribuído na ADTree (árvore 1) e a prioridade de implementação de
