@@ -4,7 +4,7 @@
 **Autor:** Lucas Rebelo
 **Entrega:** 22 de novembro de 2026
 
-Estrutura:
+Estrutura clássica de artigo/tese, conforme pedido no enunciado da cadeira:
 Introduction · Relevant State of the Art · Service Architecture Used ·
 Risk Management and Mitigation · Approach to three threats considered ·
 Evaluation of the solution's approaches and scalability · Conclusions
@@ -1039,37 +1039,18 @@ coerente com o ciclo do poller):
 2026-11-14T18:04:18Z FRAUD_DETECTED
 ```
 
-**Limitação documentada — resposta duplicada sem remediação real.** O
-active-response disparou repetidamente, dezenas de vezes, para o mesmo
-incidente não resolvido, em vez de disparar uma vez e aplicar uma mitigação
-persistente: um padrão que se repete das Ameaças 1 e 2, em que detetar
-continua a ser mais maduro do que responder, nesta implementação. Isto
-contrasta com o comportamento observado na PoC original da Secção 5.3, onde
-o mesmo valor forjado acabou por desaparecer da janela de 100 registos ao
-fim de ~2h, diluído pelo tráfego legítimo do sensor. Aqui, com apenas um
-dispositivo legítimo ativo, a janela de exposição do dado fraudulento foi
-suficientemente longa para o poller o detetar e reportar de forma sustida
-antes de ser expulso da janela, evidenciando que a janela de deteção útil
-depende diretamente do volume de tráfego legítimo concorrente, uma variável
-que um atacante também poderia manipular (inundando o sistema com leituras
-legítimas forjadas para acelerar a diluição de uma leitura maliciosa
-específica).
-
-**Resposta de auditoria vs. resposta de remediação.** A distinção
-confirma-se entre as três ameaças: ao contrário das Ameaças 1 e 2, onde o
-active-response altera de facto a condição medida (o `DELETE /unregister`
-remove a entrada maliciosa, o rate-limit reduz o volume aceite), aqui o
-script apenas regista o incidente, sem qualquer capacidade de remediação,
-por não existir, na aplicação, um endpoint de eliminação seletiva no
-Storage. Na prática, isto significa que o estado de "problema" no Zabbix
-(Secção 5.3.1) não se resolve por efeito do active-response: mantém-se
-ativo até o valor forjado sair naturalmente da janela de 100 leituras mais
-recentes do Storage, pelo mesmo mecanismo de diluição documentado na PoC
-original, com ou sem a resposta do Wazuh a correr. É uma limitação relevante
-a reportar: das três respostas implementadas, apenas duas (Ameaças 1 e 2)
-resolvem a causa do alerta; a terceira (Ameaça 3) só o documenta, deixando a
-remediação efetiva, por exemplo um endpoint `DELETE /temperatures/<id>` no
-Storage, por implementar.
+**Resposta de auditoria, não de remediação.** O active-response disparou
+repetidamente para o mesmo incidente não resolvido, em vez de aplicar uma
+mitigação persistente — ao contrário das Ameaças 1 e 2, onde a resposta
+altera de facto a condição medida (remove a entrada maliciosa / reduz o
+volume aceite), aqui o script só regista o incidente, por não existir no
+`storage.py` um endpoint de eliminação seletiva. O estado de "problema" no
+Zabbix só se resolve quando o valor forjado sai naturalmente da janela de
+100 leituras mais recentes, o mesmo mecanismo de diluição observado na PoC
+original (~2h). É uma limitação real: das três respostas implementadas, só
+duas (Ameaças 1 e 2) resolvem a causa do alerta; a Ameaça 3 só a documenta,
+deixando a remediação efetiva — por exemplo, um endpoint
+`DELETE /temperatures/<id>` no Storage — por implementar.
 
 - Evidência (Fase 4 — deteção e quarentena confirmadas):
   `evidencia/poc3-resposta-final/01-injecao.txt`, `02-poller-anomaly.txt`,
